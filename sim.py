@@ -1,6 +1,5 @@
 from heapq import heappush, heappop
 import random
-import time
 
 import greenlet
 
@@ -11,6 +10,7 @@ class Simulator(object):
         self._ts_now = ts_now
         self._events = []
         self._is_running = False
+        self._counter = 0
 
     def now(self):
         return self._ts_now
@@ -19,10 +19,11 @@ class Simulator(object):
         delay = float(delay)
         if delay < 0.0:
             raise ValueError("Delay must be positive.")
-        # Use real time to strictly order events happening at the same
+        # Use counter to strictly order events happening at the same
         # simulated time. This gives a total order on events, working around
         # the heap queue not yielding a stable ordering.
-        heappush(self._events, (self._ts_now + delay, time.time(), event))
+        heappush(self._events, (self._ts_now + delay, self._counter, event))
+        self._counter += 1
         return self
 
     def start(self):
