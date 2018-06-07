@@ -9,7 +9,7 @@ def test_schedule_none():
 
 
 def append(n, ll):
-    def _append():
+    def _append(sim):
         ll.append(n)
 
     return _append
@@ -37,15 +37,14 @@ def test_schedule_multiple_events():
 def test_schedule_recurring():
     ll = [0]
 
-    sim = Simulator()
-
-    def _append():
+    def _append(sim):
         if sim.now() <= 10.0:
             ll.append(ll[-1] + 1)
             sim.schedule(1.0, _append)
         else:
             sim.stop()
 
+    sim = Simulator()
     sim.schedule(1.0, _append)
     sim.start()
     assert sim.now() == 11.0
@@ -58,7 +57,7 @@ class ProcessTest(Process):
         super().__init__(sim)
         self.ll = []
 
-    def _run(self):
+    def _run(self, sim):
         self.ll.append(self.sim.now())
         self.advance(1.0)
         self.ll.append(self.sim.now())
@@ -81,7 +80,7 @@ class ProcessConstant(Process):
         self.period = period
         self.log = log
 
-    def _run(self):
+    def _run(self, sim):
         while True:
             self.advance(self.period)
             self.log.append((int(self.sim.now()), self.name))
@@ -89,7 +88,7 @@ class ProcessConstant(Process):
 
 class Stopper(Process):
 
-    def _run(self):
+    def _run(self, sim):
         self.sim.stop()
 
 
@@ -117,7 +116,7 @@ class Process2(Process):
 
         self.results: List[Tuple] = []
 
-    def _run(self):
+    def _run(self, sim):
         self.results.append((self.sim.now(), self.name, 0))
         self.advance(2)
         self.results.append((self.sim.now(), self.name, 1))
@@ -146,16 +145,15 @@ test_functions_result = []
 
 
 def test_schedule_functions():
-    sim = Simulator()
-
-    def f1():
+    def f1(sim):
         res = f"1 + {sim.now()}"
         test_functions_result.append(res)
 
-    def f2():
+    def f2(sim):
         res = f"2 + {sim.now()}"
         test_functions_result.append(res)
 
+    sim = Simulator()
     sim.schedule(1, f1)
     sim.schedule(2, f2)
     sim.schedule(3, f1)

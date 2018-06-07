@@ -77,7 +77,7 @@ class Simulator(object):
         self._is_running = True
         while self.is_running() and len(self._events) > 0:
             self._ts_now, _, event = heappop(self._events)
-            event()
+            event(self)
 
         self.stop()
 
@@ -128,7 +128,7 @@ class Process(ABC):
         self.schedule(delay_start)
 
     @abstractmethod
-    def _run(self) -> None:
+    def _run(self, sim) -> None:
         """
         Implement the `run` method in your derived class.
         To re-schedule, simply call self.advance()
