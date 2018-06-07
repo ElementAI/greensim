@@ -1,20 +1,20 @@
-from heapq import heappush, heappop
-import random
-
 import greenlet
+from abc import ABC, abstractmethod
+from heapq import heappush, heappop
+from typing import Callable, Tuple, List
 
 
 class Simulator(object):
     """
     This class articulates the dynamic sequence of events that composes a
     discrete event system. While it may be used by itself, using method
-    schedule(), its use in conjuction with subclasses of abstract class
+    schedule(), its use in conjunction with subclasses of abstract class
     Process yields an elegant DSL for modeling discrete event systems.
 
     Each event within a simulation is associated to a moment on the
     simulator's clock. This timeline is completely abstract: a 1.0 unit on
     this clock corresponds to whatever unit of time is convenient to the
-    model author (such correspondance, when relevant, is best documented for
+    model author (such correspondence, when relevant, is best documented for
     the benefit of the users of the model). When the simulation runs, events
     are executed as fast as a single CPU allows.
 
@@ -29,23 +29,25 @@ class Simulator(object):
     as many times as makes sense to study the model.
     """
 
-    def __init__(self, ts_now = 0.0):
+    def __init__(self, ts_now: float = 0.0) -> None:
         """
         Constructor. Parameter ts_now can be set to the initial value of the
         simulator's clock; it defaults at 0.0.
         """
         self._ts_now = ts_now
-        self._events = []
+        self._events: List[Tuple[float, int, Callable]] = []
         self._is_running = False
         self._counter = 0
 
-    def now(self):
+        self._gr = greenlet.greenlet(self._run)  # The Simulator main greenlet
+
+    def now(self) -> float:
         """
         Returns the current value of the simulator's clock.
         """
         return self._ts_now
 
-    def schedule(self, delay, event):
+    def schedule(self, delay: float, event: Callable) -> 'Simulator':
         """
         Schedules an event to be run along the simulation. The event is
         scheduled relative to current simulator time, so delay is expected to
@@ -55,9 +57,11 @@ class Simulator(object):
         instance itself. Once this event function returns, the simulation
         carries on to the next event, or stops if none remain.
         """
+
         delay = float(delay)
         if delay < 0.0:
             raise ValueError("Delay must be positive.")
+
         # Use counter to strictly order events happening at the same
         # simulated time. This gives a total order on events, working around
         # the heap queue not yielding a stable ordering.
@@ -65,16 +69,12 @@ class Simulator(object):
         self._counter += 1
         return self
 
-    def start(self):
+    def start(self) -> None:
         """
         Runs the simulation until a stopping condition is met (no more events,
         or an event invokes method stop()).
         """
-        self._is_running = True
-        while self.is_running() and len(self._events) > 0:
-            self._ts_now, _, event = heappop(self._events)
-            event(self)
-        return self
+        self._gr.switch()  # Give control the the main greenlet, which will execute self._run()
 
     def stop(self):
         """
@@ -84,14 +84,28 @@ class Simulator(object):
         self._is_running = False
         return self
 
+    def switch(self):
+        """
+        Gives control back to the simulator greenlet
+        """
+        self._gr.switch()
+
     def is_running(self):
         """
         Tells whether the simulation is currently running.
         """
         return self._is_running
 
+    def _run(self):
+        self._is_running = True
+        while self.is_running() and len(self._events) > 0:
+            self._ts_now, _, event = heappop(self._events)
+            event()
 
-class Process(object):
+        self.stop()
+
+
+class Process(ABC):
     """
     Abstract class used to model a process composed of a sequence of discrete
     events. A model is typically built around a set of intertwining infinite
@@ -108,27 +122,37 @@ class Process(object):
     simulation to the moment where something else happens.
     """
 
-    def __init__(self, sim, delay_start = 0.0):
+    def __init__(self, sim: Simulator, delay_start: float = 0.0) -> None:
         """
         Constructor. Receives a simulator instance, as well as a relative
         moment at which the process should be made to start.
         """
         self.sim = sim
         self._gr = greenlet.greenlet(self._start)
-        self._gr_sim = None
-        self.sim.schedule(delay_start, self._resume)
+        self.schedule(delay_start)
 
-    def _start(self, gr_sim):
-        self._gr_sim = gr_sim
-        self._run()
+    @abstractmethod
+    def run(self) -> None:
+        """
+        Implement the `run` method in your derived class.
+        To re-schedule, simply call self.advance()
+        """
+        pass
 
-    def _resume(self, _sim):
-        self._gr.switch(greenlet.getcurrent())
+    def _start(self) -> None:
+        self.run()
+        self.sim.switch()
 
-    def advance(self, delay):
+    def schedule(self, delay: float) -> None:
+        """
+        Schedules execution of this process for t + `delay` time units.
+        """
+        self.sim.schedule(delay, self._gr.switch)
+
+    def advance(self, delay: float) -> None:
         """
         Puts the process to "sleep," and resumes its execution only after the
         given delay in simulated time.
         """
-        self.sim.schedule(delay, self._resume)
-        self._gr_sim.switch()
+        self.schedule(delay)
+        self.sim.switch()
