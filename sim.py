@@ -81,21 +81,20 @@ class Simulator(object):
 
         self.stop()
 
-    def stop(self):
+    def stop(self) -> None:
         """
         Stops the running simulation once the current event is done
         executing.
         """
         self._is_running = False
-        return self
 
-    def is_running(self):
+    def is_running(self) -> bool:
         """
         Tells whether the simulation is currently running.
         """
         return self._is_running
 
-    def _switch(self):
+    def _switch(self) -> None:
         """
         Gives control back to the simulator. Meant to be called from a Process object.
         """
@@ -125,20 +124,16 @@ class Process(ABC):
         moment at which the process should be made to start.
         """
         self.sim = sim
-        self._gr = greenlet.greenlet(self._start)
+        self._gr = greenlet.greenlet(self._run)
         self.schedule(delay_start)
 
     @abstractmethod
-    def run(self) -> None:
+    def _run(self) -> None:
         """
         Implement the `run` method in your derived class.
         To re-schedule, simply call self.advance()
         """
         pass
-
-    def _start(self) -> None:
-        self.run()
-        self.sim._switch()
 
     def schedule(self, delay: float) -> None:
         """
