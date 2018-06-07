@@ -39,7 +39,7 @@ class Simulator(object):
         self._is_running = False
         self._counter = 0
 
-        self._gr = greenlet.greenlet(self._run)  # The Simulator main greenlet
+        self._gr = greenlet.getcurrent()  # The Simulator's main greenlet
 
     def now(self) -> float:
         """
@@ -74,7 +74,12 @@ class Simulator(object):
         Runs the simulation until a stopping condition is met (no more events,
         or an event invokes method stop()).
         """
-        self._gr.switch()  # Give control the the main greenlet, which will execute self._run()
+        self._is_running = True
+        while self.is_running() and len(self._events) > 0:
+            self._ts_now, _, event = heappop(self._events)
+            event()
+
+        self.stop()
 
     def stop(self):
         """
@@ -84,25 +89,17 @@ class Simulator(object):
         self._is_running = False
         return self
 
-    def switch(self):
-        """
-        Gives control back to the simulator greenlet
-        """
-        self._gr.switch()
-
     def is_running(self):
         """
         Tells whether the simulation is currently running.
         """
         return self._is_running
 
-    def _run(self):
-        self._is_running = True
-        while self.is_running() and len(self._events) > 0:
-            self._ts_now, _, event = heappop(self._events)
-            event()
-
-        self.stop()
+    def _switch(self):
+        """
+        Gives control back to the simulator. Meant to be called from a Process object.
+        """
+        self._gr.switch()
 
 
 class Process(ABC):
@@ -141,7 +138,7 @@ class Process(ABC):
 
     def _start(self) -> None:
         self.run()
-        self.sim.switch()
+        self.sim._switch()
 
     def schedule(self, delay: float) -> None:
         """
@@ -155,4 +152,5 @@ class Process(ABC):
         given delay in simulated time.
         """
         self.schedule(delay)
-        self.sim.switch()
+        self.sim._switch()
+

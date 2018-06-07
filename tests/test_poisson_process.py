@@ -1,4 +1,4 @@
-from processes.poisson import PoissonProcess
+from poisson_process import PoissonProcess
 from sim import Simulator
 
 import statistics

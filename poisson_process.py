@@ -5,6 +5,9 @@ from sim import Process, Simulator
 
 
 class PoissonProcess(Process):
+    """
+    An example process which follows a Poisson distribution.
+    """
 
     def __init__(self, simulator: Simulator, lambda_: float, max_samples: int = None) -> None:
         super().__init__(simulator)
