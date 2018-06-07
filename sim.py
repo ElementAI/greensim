@@ -153,4 +153,3 @@ class Process(ABC):
         """
         self.schedule(delay)
         self.sim._switch()
-
