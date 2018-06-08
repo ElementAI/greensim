@@ -124,11 +124,11 @@ class Process(ABC):
         moment at which the process should be made to start.
         """
         self.sim = sim
-        self._gr = greenlet.greenlet(self._run, self.sim._gr)
+        self._gr = greenlet.greenlet(lambda _sim: self._run(), self.sim._gr)
         self.schedule(delay_start)
 
     @abstractmethod
-    def _run(self, sim) -> None:
+    def _run(self) -> None:
         """
         Implement the `run` method in your derived class.
         To re-schedule, simply call self.advance()

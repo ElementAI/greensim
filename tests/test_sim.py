@@ -57,7 +57,7 @@ class ProcessTest(Process):
         super().__init__(sim)
         self.ll = []
 
-    def _run(self, sim):
+    def _run(self):
         self.ll.append(self.sim.now())
         self.advance(1.0)
         self.ll.append(self.sim.now())
@@ -80,7 +80,7 @@ class ProcessConstant(Process):
         self.period = period
         self.log = log
 
-    def _run(self, sim):
+    def _run(self):
         while True:
             self.advance(self.period)
             self.log.append((int(self.sim.now()), self.name))
@@ -88,7 +88,7 @@ class ProcessConstant(Process):
 
 class Stopper(Process):
 
-    def _run(self, sim):
+    def _run(self):
         self.sim.stop()
 
 
@@ -116,7 +116,7 @@ class Process2(Process):
 
         self.results: List[Tuple] = []
 
-    def _run(self, sim):
+    def _run(self):
         self.results.append((self.sim.now(), self.name, 0))
         self.advance(2)
         self.results.append((self.sim.now(), self.name, 1))
