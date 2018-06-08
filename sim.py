@@ -124,7 +124,7 @@ class Process(ABC):
         moment at which the process should be made to start.
         """
         self.sim = sim
-        self._gr = greenlet.greenlet(self._run)
+        self._gr = greenlet.greenlet(self._run, self.sim._gr)
         self.schedule(delay_start)
 
     @abstractmethod
