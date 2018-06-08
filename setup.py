@@ -1,8 +1,9 @@
 from setuptools import setup
+from subprocess import check_output
 
 setup(
     name='sim',
-    version='1.0.0',
+    version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
     packages=['sim'],
     install_requires=['greenlet==0.4.13'],
     description='Discrete Event Simulator',
