@@ -6,7 +6,7 @@ Core tools for building simulations.
 import greenlet
 from abc import ABC, abstractmethod
 from heapq import heappush, heappop
-from typing import Callable, Tuple, List
+from typing import Callable, Tuple, List, Iterable
 
 
 class Simulator(object):
@@ -51,6 +51,12 @@ class Simulator(object):
         Returns the current value of the simulator's clock.
         """
         return self._ts_now
+
+    def events(self) -> Iterable[Tuple[float, Callable]]:
+        """
+        Iterates over scheduled events.
+        """
+        return ((moment, event) for moment, _, event in self._events)
 
     def schedule(self, delay: float, event: Callable) -> 'Simulator':
         """
