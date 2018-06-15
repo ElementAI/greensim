@@ -1,3 +1,8 @@
+"""
+Core tools for building simulations.
+"""
+
+
 import greenlet
 from abc import ABC, abstractmethod
 from heapq import heappush, heappop
