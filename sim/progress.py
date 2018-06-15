@@ -65,6 +65,10 @@ class ProgressTracker(Process):
         return list(zip(self._measurer(), self._target))
 
     def is_finished(self) -> bool:
+        """
+        Determines whether simulation is finished, according to given
+        progress measure and target.
+        """
         return all(p >= t for p, t in self._measure())
 
     def _run(self) -> None:
