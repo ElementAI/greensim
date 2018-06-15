@@ -30,12 +30,13 @@ def capturer_print(file_dest_maybe: Optional[IO] = None):
     """Progress capturer that writes updated metrics to an interactive terminal."""
     file_dest: IO = file_dest_maybe or sys.stderr
     def _print_progress(progress_min: float, rt_remaining: float, _mc: MeasureComparison) -> None:
+        nonlocal file_dest
         percent_progress = progress_min * 100.0
         time_remaining, unit = _display_time(rt_remaining)
         print(
             f"Progress: {percent_progress:.1f}% -- Time remaining: {time_remaining} {unit}          ",
             end="\r",
-            file=self._output
+            file=file_dest
         )
     return _print_progress
 
