@@ -37,6 +37,7 @@ def capturer_print(file_dest_maybe: Optional[IO] = None):
             end="\r",
             file=self._output
         )
+    return _print_progress
 
 
 class ProgressTracker(Process):
