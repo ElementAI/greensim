@@ -27,6 +27,7 @@ def sim_time(sim: Simulator):
 
 
 def capturer_print(file_dest_maybe: Optional[IO] = None):
+    """Progress capturer that writes updated metrics to an interactive terminal."""
     file_dest: IO = file_dest_maybe or sys.stderr
     def _print_progress(progress_min: float, rt_remaining: float, _mc: MeasureComparison) -> None:
         percent_progress = progress_min * 100.0
