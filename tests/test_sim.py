@@ -1,6 +1,6 @@
 from typing import Tuple, List
-
-from sim import Simulator, Process
+import pytest
+from sim import Simulator, Process, Gate
 
 
 def test_schedule_none():
@@ -159,3 +159,37 @@ def test_schedule_functions():
     sim.schedule(3, f1)
     sim.start()
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == test_functions_result
+
+
+class ProcessPausing(Process):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._counter = 0
+
+    @property
+    def counter(self):
+        return self._counter
+
+    def _increment(self):
+        self._counter += 1
+
+    def _run(self):
+        self._increment()
+        self.pause()
+        self.advance(1.0)
+        self._increment()
+
+
+def test_process_pause_resume(simulator):
+    pp = ProcessPausing(simulator, delay_start=1.0)
+    simulator.start()
+    assert simulator.now() == pytest.approx(1.0)
+    assert pp.counter == 1
+    simulator.start()
+    assert simulator.now() == pytest.approx(1.0)
+    assert pp.counter == 1
+    pp.resume()
+    simulator.start()
+    assert simulator.now() == pytest.approx(2.0)
+    assert pp.counter == 2

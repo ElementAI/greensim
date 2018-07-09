@@ -159,3 +159,16 @@ class Process(ABC):
         """
         self.schedule(delay)
         self.sim._switch()
+
+    def pause(self) -> None:
+        """
+        Indefinitely puts the process to "sleep." It will resume its execution
+        only once some other process invokes its methods resume() or schedule().
+        """
+        self.sim._switch()
+
+    def resume(self) -> None:
+        """
+        Schedules the resumption of a previously paused process immediately.
+        """
+        self.schedule(0.0)
