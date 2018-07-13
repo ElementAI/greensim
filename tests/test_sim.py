@@ -205,7 +205,7 @@ LogTestQueue = List[int]
 
 class Queuer(Process):
 
-    def __init__(self, name: int, queue, log: LogTestQueue, delay):
+    def __init__(self, name: int, queue, log: LogTestQueue, delay) -> None:
         super().__init__(queue.sim, delay)
         self.name = name
         self._queue = queue
@@ -300,12 +300,12 @@ def log_time() -> List[float]:
 
 class CrosserClosing(Process):
 
-    def __init__(self, gate: Gate, log: List[float]):
+    def __init__(self, gate: Gate, log: List[float]) -> None:
         super().__init__(gate.sim)
         self._gate = gate
         self._log = log
 
-    def _run(self):
+    def _run(self) -> None:
         self._gate.cross(self)
         self._gate.close()
         self._log.append(self.sim.now())

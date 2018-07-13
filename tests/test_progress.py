@@ -34,12 +34,16 @@ def test_display_days():
 
 
 def test_combine():
+
     def _measure1():
         return [5.6, 8.9]
+
     def _measure2():
         return [9.3]
+
     def _measure3():
         return [2.3, 9.2, 8.9]
+
     assert combine(_measure1) == [5.6, 8.9]
     assert combine(_measure1, _measure2, _measure3) == [5.6, 8.9, 9.3, 2.3, 9.2, 8.9]
 
@@ -79,10 +83,12 @@ def test_progress_capture():
 
     def set_ab(new_a, new_b):
         nonlocal a, b
+
         def _event(sim):
             nonlocal a, b
             a = new_a
             b = new_b
+
         return _event
 
     def measure():
@@ -90,7 +96,7 @@ def test_progress_capture():
         return (a, b)
 
     sim = Simulator()
-    ProgressTracker(sim, measure, [10,10], 10.0, capture)
+    ProgressTracker(sim, measure, [10, 10], 10.0, capture)
     sim.schedule(15.0, set_ab(2, 0))
     sim.schedule(25.0, set_ab(4, 1))
     sim.schedule(35.0, set_ab(4, 6))

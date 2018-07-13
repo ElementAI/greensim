@@ -1,7 +1,7 @@
 from setuptools import setup
-from subprocess import check_output
+# from subprocess import check_output
 
-    # version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
+# version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
 setup(
     name='sim',
     version='1.1.2',
