@@ -181,11 +181,12 @@ class Ordered(metaclass=ABCMeta):
 
 
 Orderable = TypeVar('Orderable', bound=Ordered)
+GetQueueOrderToken = Callable[[Process, int], Orderable]
 
 
 class Queue(object):
 
-    def __init__(self, sim: Simulator, get_order_token: Optional[Callable[[Process, int], Orderable]] = None):
+    def __init__(self, sim: Simulator, get_order_token: Optional[GetQueueOrderToken] = None):
         super().__init__()
         self.sim = sim
         self._waiting = []
@@ -203,3 +204,28 @@ class Queue(object):
     def pop(self):
         _, process = heappop(self._waiting)
         process.resume()
+
+
+class Gate(object):
+
+    def __init__(self, sim: Simulator, is_open=True, get_queue_order_token: Optional[GetQueueOrderToken] = None):
+        super().__init__()
+        self.sim = sim
+        self._is_open = is_open
+        self._queue = Queue(sim, get_queue_order_token)
+
+    @property
+    def is_open(self):
+        return self._is_open
+
+    def open(self):
+        self._is_open = True
+        while not self._queue.is_empty():
+            self._queue.pop()
+
+    def close(self):
+        self._is_open = False
+
+    def cross(self, process):
+        while not self.is_open:
+            self._queue.join(process)

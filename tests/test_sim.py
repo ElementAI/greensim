@@ -161,42 +161,9 @@ def test_schedule_functions():
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == test_functions_result
 
 
-class GoThrough(Process):
-
-    def __init__(self, gate, times_cross_expected, time_between):
-        super().__init__(gate.sim)
-        self._gate = gate
-        self._times_cross_expected = times_cross_expected
-        self._time_between = time_between
-
-    def _run(self):
-        for expected in self._times_cross_expected:
-            self.advance(self._time_between)
-            self._gate.cross()
-            assert pytest.approx(expected) == sim.now()
-
-
 @pytest.fixture
 def simulator():
     return Simulator()
-
-
-@pytest.fixture
-def gate(simulator):
-    return Gate(simulator)
-
-
-# def test_gate_already_open(gate):
-#     gate.open()
-#     GoThrough(gate, [1.0], 1.0)
-#     gate.sim.run()
-
-
-# def test_gate_wait_open(gate):
-#     gate.close()
-#     GoThrough(g, [3.0, 4.0], 1.0)
-#     gate.sim.schedule(3.0, lambda sim: gate.open())
-#     gate.sim.run()
 
 
 class ProcessPausing(Process):
@@ -281,3 +248,75 @@ def test_queue_join_pop_chrono(simulator, log_test_queue):
 def test_queue_join_pop_evenodd(simulator, log_test_queue):
     run_test_queue_join_pop(Queue(simulator, lambda process, counter: (process.name % 2, counter)), log_test_queue)
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue
+
+
+@pytest.fixture
+def gate(simulator):
+    return Gate(simulator)
+
+
+class GoThrough(Process):
+
+    def __init__(self, gate, times_cross_expected, time_between):
+        super().__init__(gate.sim)
+        self._gate = gate
+        self._times_cross_expected = times_cross_expected
+        self._time_between = time_between
+
+    def _run(self):
+        for expected in self._times_cross_expected:
+            self.advance(self._time_between)
+            self._gate.cross(self)
+            assert pytest.approx(expected) == self.sim.now()
+
+
+def test_gate_already_open(gate):
+    gate.open()
+    GoThrough(gate, [1.0], 1.0)
+    gate.sim.start()
+
+
+def test_gate_wait_open(gate):
+    gate.close()
+    GoThrough(gate, [3.0, 4.0], 1.0)
+    gate.sim.schedule(3.0, lambda sim: gate.open())
+    gate.sim.start()
+
+
+def test_gate_toggling(gate):
+    gate.close()
+    GoThrough(gate, [3.0, 4.0, 10.0, 13.0], 1.0)
+    gate.sim.schedule(3.0, lambda sim: gate.open())
+    gate.sim.schedule(4.5, lambda sim: gate.close())
+    gate.sim.schedule(10.0, lambda sim: gate.open())
+    gate.sim.schedule(10.1, lambda sim: gate.close())
+    gate.sim.schedule(13.0, lambda sim: gate.open())
+
+
+@pytest.fixture
+def log_time() -> List[float]:
+    return []
+
+
+class CrosserClosing(Process):
+
+    def __init__(self, gate: Gate, log: List[float]):
+        super().__init__(gate.sim)
+        self._gate = gate
+        self._log = log
+
+    def _run(self):
+        self._gate.cross(self)
+        self._gate.close()
+        self._log.append(self.sim.now())
+
+
+def test_gate_crosser_closing(gate, log_time):
+    for n in range(5):
+        CrosserClosing(gate, log_time)
+    schedule_gate_open = [4.0, 9.0, 9.1, 200.0, 3000.0]
+    for moment in schedule_gate_open:
+        gate.sim.schedule(moment, lambda sim: gate.open())
+    gate.close()
+    gate.sim.start()
+    assert schedule_gate_open == pytest.approx(log_time)
