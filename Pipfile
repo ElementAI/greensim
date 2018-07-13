@@ -8,6 +8,8 @@ greenlet = "==0.4.13"
 
 [dev-packages]
 pytest = "*"
+flake8 = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.6"

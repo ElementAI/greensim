@@ -5,5 +5,34 @@ DIR_ROOT = os.path.abspath(os.path.dirname(sys.argv[0]))
 sys.path.append(os.path.join(DIR_ROOT))
 
 import pytest
+from flake8.main.cli import main as flake8_main
+from mypy.main import main as mypy_main
 
-pytest.main(sys.argv[1:] + ["tests"])
+
+if __name__ == '__main__':
+    print("### Checking PEP-8 code adherence ###")
+    try:
+        flake8_main()
+    except SystemExit as err:
+        success_flake8 = (not err.code)
+
+    print("### Verifying type annotations and type coherence ###")
+    try:
+        mypy_main(None, ["--ignore-missing-imports", "--strict-optional", "--incremental", "."])
+        success_mypy = True
+    except SystemExit as err:
+        success_mypy = False
+
+    print("### Running unit tests ###")
+    success_pytest = (pytest.main(sys.argv[1:] + ["tests"]) == 0)
+
+    if all([success_flake8, success_mypy, success_pytest]):
+        print("### Success ###")
+    else:
+        for success, msg in [
+            (success_flake8, "PEP-8 linting"),
+            (success_mypy, "Type verifications"),
+            (success_pytest, "Unit tests")
+        ]:
+            if not success:
+                print(f"### FAIL: {msg} ###")
