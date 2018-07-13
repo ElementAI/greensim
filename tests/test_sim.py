@@ -1,6 +1,6 @@
 from typing import Tuple, List
 import pytest
-from sim import Simulator, Process, Gate
+from sim import Simulator, Process, Queue, Gate
 
 
 def test_schedule_none():
@@ -161,6 +161,44 @@ def test_schedule_functions():
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == test_functions_result
 
 
+class GoThrough(Process):
+
+    def __init__(self, gate, times_cross_expected, time_between):
+        super().__init__(gate.sim)
+        self._gate = gate
+        self._times_cross_expected = times_cross_expected
+        self._time_between = time_between
+
+    def _run(self):
+        for expected in self._times_cross_expected:
+            self.advance(self._time_between)
+            self._gate.cross()
+            assert pytest.approx(expected) == sim.now()
+
+
+@pytest.fixture
+def simulator():
+    return Simulator()
+
+
+@pytest.fixture
+def gate(simulator):
+    return Gate(simulator)
+
+
+# def test_gate_already_open(gate):
+#     gate.open()
+#     GoThrough(gate, [1.0], 1.0)
+#     gate.sim.run()
+
+
+# def test_gate_wait_open(gate):
+#     gate.close()
+#     GoThrough(g, [3.0, 4.0], 1.0)
+#     gate.sim.schedule(3.0, lambda sim: gate.open())
+#     gate.sim.run()
+
+
 class ProcessPausing(Process):
 
     def __init__(self, *args, **kwargs):
@@ -193,3 +231,53 @@ def test_process_pause_resume(simulator):
     simulator.start()
     assert simulator.now() == pytest.approx(2.0)
     assert pp.counter == 2
+
+
+LogTestQueue = List[int]
+
+
+class Queuer(Process):
+
+    def __init__(self, name: int, queue, log: LogTestQueue, delay):
+        super().__init__(queue.sim, delay)
+        self.name = name
+        self._queue = queue
+        self._log = log
+
+    def _run(self):
+        self._queue.join(self)
+        self._log.append(self.name)
+
+
+class Dequeueing(Process):
+
+    def __init__(self, queue, delay):
+        super().__init__(queue.sim, delay)
+        self._queue = queue
+
+    def _run(self):
+        while not self._queue.is_empty():
+            self.advance(1.0)
+            self._queue.pop()
+
+
+@pytest.fixture
+def log_test_queue() -> LogTestQueue:
+    return []
+
+
+def run_test_queue_join_pop(queue: Queue, log: LogTestQueue) -> None:
+    for n in range(10):
+        Queuer(n, queue, log, float(n + 1))
+    Dequeueing(queue, 100.0)
+    queue.sim.start()
+
+
+def test_queue_join_pop_chrono(simulator, log_test_queue):
+    run_test_queue_join_pop(Queue(simulator), log_test_queue)
+    assert list(range(10)) == log_test_queue
+
+
+def test_queue_join_pop_evenodd(simulator, log_test_queue):
+    run_test_queue_join_pop(Queue(simulator, lambda process, counter: (process.name % 2, counter)), log_test_queue)
+    assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue

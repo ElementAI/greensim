@@ -3,10 +3,11 @@ Core tools for building simulations.
 """
 
 
-import greenlet
-from abc import ABC, abstractmethod
+from abc import ABC, ABCMeta, abstractmethod
 from heapq import heappush, heappop
-from typing import Callable, Tuple, List, Iterable
+from typing import Callable, Tuple, List, Iterable, Any, TypeVar, Optional
+
+import greenlet
 
 
 class Simulator(object):
@@ -172,3 +173,33 @@ class Process(ABC):
         Schedules the resumption of a previously paused process immediately.
         """
         self.schedule(0.0)
+
+
+class Ordered(metaclass=ABCMeta):
+    @abstractmethod
+    def __lt__(self, other: Any) -> bool: ...
+
+
+Orderable = TypeVar('Orderable', bound=Ordered)
+
+
+class Queue(object):
+
+    def __init__(self, sim: Simulator, get_order_token: Optional[Callable[[Process, int], Orderable]] = None):
+        super().__init__()
+        self.sim = sim
+        self._waiting = []
+        self._counter = 0
+        self._get_order_token = get_order_token or (lambda process, counter: counter)
+
+    def is_empty(self):
+        return len(self._waiting) == 0
+
+    def join(self, process):
+        self._counter += 1
+        heappush(self._waiting, (self._get_order_token(process, self._counter), process))
+        process.pause()
+
+    def pop(self):
+        _, process = heappop(self._waiting)
+        process.resume()
