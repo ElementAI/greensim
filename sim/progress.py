@@ -5,7 +5,7 @@ Progress tracking tools for simulations.
 from math import ceil, inf
 import sys
 import time
-from typing import cast, Callable, Sequence, Tuple, IO, Optional
+from typing import cast, Callable, Sequence, Tuple, IO, Optional, Union
 
 from sim import Simulator, Process
 
@@ -18,7 +18,7 @@ CapturerProgress = Callable[[float, float, MeasureComparison], None]
 
 def combine(*measurers: Sequence[MeasurerProgress]) -> MetricProgress:
     """Combines multiple progress measures into one metric."""
-    return sum((list(measurer()) for measurer in measurers), [])
+    return sum((list(cast(MeasurerProgress, measurer)()) for measurer in measurers), [])
 
 
 def sim_time(sim: Simulator):
@@ -29,6 +29,7 @@ def sim_time(sim: Simulator):
 def capturer_print(file_dest_maybe: Optional[IO] = None):
     """Progress capturer that writes updated metrics to an interactive terminal."""
     file_dest: IO = file_dest_maybe or sys.stderr
+
     def _print_progress(progress_min: float, rt_remaining: float, _mc: MeasureComparison) -> None:
         nonlocal file_dest
         percent_progress = progress_min * 100.0
@@ -38,6 +39,7 @@ def capturer_print(file_dest_maybe: Optional[IO] = None):
             end="\r",
             file=file_dest
         )
+
     return _print_progress
 
 
@@ -56,7 +58,7 @@ class ProgressTracker(Process):
         target: MetricProgress,
         interval_check: float,
         capturer: Optional[CapturerProgress] = None
-    ):
+    ) -> None:
         super().__init__(sim)
         self._measurer = measurer
         self._target = target
@@ -96,7 +98,7 @@ class ProgressTracker(Process):
             self.advance(self._interval_check)
 
 
-def _divide_round(dividend: int, divider: int) -> int:
+def _divide_round(dividend: Union[float, int], divider: Union[float, int]) -> int:
     return int(ceil(float(dividend) / divider))
 
 
