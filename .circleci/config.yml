@@ -36,4 +36,4 @@ jobs:
             pipenv run mypy --ignore-missing-imports --strict-optional --incremental .
             # pipenv run pytest --cov-config .coveragerc --cov=. tests/
             pipenv run pytest tests/
-            pipenv run coveralls
+            # pipenv run coveralls
