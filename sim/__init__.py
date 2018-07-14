@@ -2,11 +2,10 @@
 Core tools for building simulations.
 """
 
-
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from heapq import heappush, heappop
-from typing import Callable, Tuple, List, Iterable, Any, TypeVar, Optional, Dict
+from typing import Callable, Tuple, List, Iterable, Any, Optional, Dict, cast
 
 import greenlet
 
@@ -176,19 +175,11 @@ class Process(ABC):
         self.schedule(0.0)
 
 
-class Ordered(metaclass=ABCMeta):
-    @abstractmethod
-    def __lt__(self, other: Any) -> bool:
-        ...
-
-
-Orderable = TypeVar('Orderable', bound=Ordered)
-GetQueueOrderToken = Callable[[Process, int], Orderable]
-
-
 class Queue(object):
 
-    def __init__(self, sim: Simulator, get_order_token: Optional[GetQueueOrderToken] = None) -> None:
+    GetOrderToken = Callable[[Process, int], int]
+
+    def __init__(self, sim: Simulator, get_order_token: Optional[GetOrderToken] = None) -> None:
         super().__init__()
         self.sim = sim
         self._waiting: List[Process] = []
@@ -211,11 +202,11 @@ class Queue(object):
 
 class Gate(object):
 
-    def __init__(self, sim: Simulator, get_queue_order_token: Optional[GetQueueOrderToken] = None) -> None:
+    def __init__(self, sim: Simulator, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
         super().__init__()
         self.sim = sim
         self._is_open = True
-        self._queue = Queue(sim, get_queue_order_token)
+        self._queue = Queue(sim, get_order_token)
 
     @property
     def is_open(self) -> bool:
@@ -242,12 +233,12 @@ class Resource(object):
         self,
         sim: Simulator,
         num_instances: int = 1,
-        get_queue_order_token: Optional[GetQueueOrderToken] = None
+        get_order_token: Optional[Queue.GetOrderToken] = None
     ) -> None:
         super().__init__()
         self.sim = sim
         self._num_instances_free = num_instances
-        self._waiting = Queue(sim, get_queue_order_token)
+        self._waiting = Queue(sim, get_order_token)
         self._usage: Dict[Process, int] = {}
 
     @property
