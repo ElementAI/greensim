@@ -4,8 +4,9 @@ Core tools for building simulations.
 
 
 from abc import ABC, ABCMeta, abstractmethod
+from contextlib import contextmanager
 from heapq import heappush, heappop
-from typing import Callable, Tuple, List, Iterable, Any, TypeVar, Optional
+from typing import Callable, Tuple, List, Iterable, Any, TypeVar, Optional, Dict
 
 import greenlet
 
@@ -233,3 +234,39 @@ class Gate(object):
     def cross(self, process: Process) -> None:
         while not self.is_open:
             self._queue.join(process)
+
+
+class Resource(object):
+
+    def __init__(
+        self,
+        sim: Simulator,
+        num_instances: int = 1,
+        get_queue_order_token: Optional[GetQueueOrderToken] = None
+    ) -> None:
+        super().__init__()
+        self.sim = sim
+        self._num_instances_free = num_instances
+        self._waiting = Queue(sim, get_queue_order_token)
+        self._usage: Dict[Process, int] = {}
+
+    def take(self, proc: Process):
+        while self._num_instances_free < 1:
+            self._waiting.join(proc)
+        self._num_instances_free -= 1
+        self._usage.setdefault(proc, 0)
+        self._usage[proc] += 1
+
+    def release(self, proc: Process):
+        if self._usage.get(proc, 0) > 0:
+            self._usage[proc] -= 1
+            if self._usage[proc] == 0:
+                del self._usage[proc]
+            self._num_instances_free += 1
+            self._waiting.pop()
+
+    @contextmanager
+    def using(self, proc: Process):
+        self.take(proc)
+        yield self
+        self.release(proc)

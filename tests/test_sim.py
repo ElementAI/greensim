@@ -1,6 +1,8 @@
-from typing import Tuple, List
+from typing import Tuple, List, Type
+
 import pytest
-from sim import Simulator, Process, Queue, Gate
+
+from sim import Simulator, Process, Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -336,3 +338,50 @@ def test_gate_crosser_closing(gate, log_time):
     gate.close()
     gate.sim.start()
     assert schedule_gate_open == pytest.approx(log_time)
+
+
+class ResourceTaker(Process):
+
+    def __init__(self, resource: Resource, delay_with: float, log: List[float]) -> None:
+        super().__init__(resource.sim)
+        self._resource = resource
+        self._delay = delay_with
+        self._log = log
+
+    def _run(self) -> None:
+        self._resource.take(self)
+        self.do_while_holding_resource()
+        self._resource.release(self)
+
+    def do_while_holding_resource(self) -> None:
+        self.advance(self._delay)
+        self._log.append(self.sim.now())
+
+
+def run_test_resource(class_taker: Type[ResourceTaker], num_instances: int, expected: List[float]) -> None:
+    sim = Simulator()
+    resource = Resource(sim, num_instances)
+    log: List[float] = []
+    for n in range(8):
+        class_taker(resource, float(n + 1), log)
+    sim.start()
+    assert expected == pytest.approx(log)
+
+
+def test_resource_take_release_1():
+    run_test_resource(ResourceTaker, 1, [1.0, 3.0, 6.0, 10.0, 15.0, 21.0, 28.0, 36.0])
+
+
+def test_resource_take_release_5(simulator: Simulator):
+    run_test_resource(ResourceTaker, 5, [1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 9.0, 11.0])
+
+
+class ResourceTakerWith(ResourceTaker):
+
+    def _run(self) -> None:
+        with self._resource.using(self):
+            self.do_while_holding_resource()
+
+
+def test_resource_context_manager(simulator, log_time):
+    run_test_resource(ResourceTakerWith, 2, [1.0, 2.0, 4.0, 6.0, 9.0, 12.0, 16.0, 20.0])
