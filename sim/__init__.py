@@ -203,8 +203,9 @@ class Queue(object):
         process.pause()
 
     def pop(self):
-        _, process = heappop(self._waiting)
-        process.resume()
+        if not self.is_empty():
+            _, process = heappop(self._waiting)
+            process.resume()
 
 
 class Gate(object):

@@ -250,6 +250,22 @@ def test_queue_join_pop_evenodd(simulator, log_test_queue):
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue
 
 
+def test_queue_pop_empty(simulator: Simulator, log_test_queue: LogTestQueue):
+    queue = Queue(simulator)
+    Queuer(1, queue, log_test_queue, 1.0)
+    # for delay in [10.0, 20.0]:
+    #     simulator.schedule(delay, lambda sim: queue.pop())
+    simulator.start()
+    assert [] == log_test_queue
+    queue.pop()
+    simulator.start()
+    assert [1] == log_test_queue
+    assert queue.is_empty()
+    queue.pop()  # Raises an exception unless empty queue is properly processed.
+    simulator.start()
+    assert [1] == log_test_queue
+
+
 @pytest.fixture
 def gate(simulator):
     return Gate(simulator)
