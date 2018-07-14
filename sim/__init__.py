@@ -182,21 +182,24 @@ class Queue(object):
     def __init__(self, sim: Simulator, get_order_token: Optional[GetOrderToken] = None) -> None:
         super().__init__()
         self.sim = sim
-        self._waiting: List[Process] = []
+        self._waiting: List[Tuple[int, Process, Optional[Any]]] = []
         self._counter = 0
         self._get_order_token = get_order_token or (lambda process, counter: counter)
 
     def is_empty(self):
         return len(self._waiting) == 0
 
-    def join(self, process):
+    def peek(self) -> Tuple[Process, Optional[Any]]:
+        return self._waiting[0][1:]
+
+    def join(self, process: Process, tag: Optional[Any] = None):
         self._counter += 1
-        heappush(self._waiting, (self._get_order_token(process, self._counter), process))
+        heappush(self._waiting, (self._get_order_token(process, self._counter), process, tag))
         process.pause()
 
     def pop(self):
         if not self.is_empty():
-            _, process = heappop(self._waiting)
+            _, process, _ = heappop(self._waiting)
             process.resume()
 
 
@@ -256,8 +259,8 @@ class Resource(object):
             raise ValueError(
                 f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
             )
-        while self._num_instances_free < num_instances:
-            self._waiting.join(proc)
+        if self._num_instances_free < num_instances:
+            self._waiting.join(proc, tag=num_instances)
         self._num_instances_free -= num_instances
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
@@ -272,7 +275,10 @@ class Resource(object):
             if self._usage[proc] <= 0:
                 del self._usage[proc]
             self._num_instances_free += num_instances
-            self._waiting.pop()
+            if not self._waiting.is_empty():
+                num_instances_next = cast(int, self._waiting.peek()[1])
+                if num_instances_next <= self.num_instances_free:
+                    self._waiting.pop()
 
     @contextmanager
     def using(self, proc: Process, num_instances: int = 1):

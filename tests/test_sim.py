@@ -248,12 +248,15 @@ def test_queue_join_pop_chrono(simulator, log_test_queue):
 
 
 def test_queue_join_pop_evenodd(simulator, log_test_queue):
-    run_test_queue_join_pop(Queue(simulator, lambda process, counter: (process.name % 2, counter)), log_test_queue)
+    run_test_queue_join_pop(
+        Queue(simulator, lambda process, counter: counter + 1000000 * (process.name % 2)),
+        log_test_queue
+    )
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue
 
 
 def test_queue_pop_empty(simulator: Simulator, log_test_queue: LogTestQueue):
-    queue = Queue(simulator)
+    queue: Queue = Queue(simulator)
     Queuer(1, queue, log_test_queue, 1.0)
     # for delay in [10.0, 20.0]:
     #     simulator.schedule(delay, lambda sim: queue.pop())
@@ -390,22 +393,6 @@ def test_resource_context_manager(simulator, log_time):
     run_test_resource(ResourceTakerWith, 2, [1.0, 2.0, 4.0, 6.0, 9.0, 12.0, 16.0, 20.0])
 
 
-class ResourceTakerManyReenter(ResourceTaker):
-
-    def _run(self) -> None:
-        num_inst_to_take = int(self._delay)
-        for n in range(num_inst_to_take):
-            self._resource.take(self)
-        self.do_while_holding_resource()
-        for n in range(num_inst_to_take):
-            self.advance(1.0)
-            self._resource.release(self)
-
-
-# def test_resource_many_renenter(simulator, log_time):
-#     run_test_resource(ResourceTakerManyReenter, 8, [2.0, 4.0, 6.0, 12.0, 22.0, 34.0, 48.0, 64.0])
-
-
 class ResourceTakerManyOnce(ResourceTaker):
 
     def _run(self) -> None:
@@ -413,8 +400,8 @@ class ResourceTakerManyOnce(ResourceTaker):
             self.do_while_holding_resource()
 
 
-# def test_resource_many_once(simulator, log_time):
-#     run_test_resource(ResourceTakerManyOnce, 10, [1.0, 2.0, 3.0, 4.0, 8.0, 14.0, 21.0, 29.0])
+def test_resource_many_once(simulator, log_time):
+    run_test_resource(ResourceTakerManyOnce, 10, [1.0, 2.0, 3.0, 4.0, 8.0, 14.0, 21.0, 29.0])
 
 
 class ResourceTakeRelease(Process):
