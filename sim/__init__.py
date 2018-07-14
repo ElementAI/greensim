@@ -250,23 +250,41 @@ class Resource(object):
         self._waiting = Queue(sim, get_queue_order_token)
         self._usage: Dict[Process, int] = {}
 
-    def take(self, proc: Process):
-        while self._num_instances_free < 1:
-            self._waiting.join(proc)
-        self._num_instances_free -= 1
-        self._usage.setdefault(proc, 0)
-        self._usage[proc] += 1
+    @property
+    def num_instances_free(self):
+        return self._num_instances_free
 
-    def release(self, proc: Process):
+    @property
+    def num_instances_total(self):
+        return self.num_instances_free + sum(self._usage.values())
+
+    def take(self, proc: Process, num_instances: int = 1):
+        if num_instances < 1:
+            raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
+        if num_instances > self.num_instances_total:
+            raise ValueError(
+                f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
+            )
+        while self._num_instances_free < num_instances:
+            self._waiting.join(proc)
+        self._num_instances_free -= num_instances
+        self._usage.setdefault(proc, 0)
+        self._usage[proc] += num_instances
+
+    def release(self, proc: Process, num_instances: int = 1):
         if self._usage.get(proc, 0) > 0:
-            self._usage[proc] -= 1
-            if self._usage[proc] == 0:
+            if num_instances > self._usage[proc]:
+                raise ValueError(
+                    f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
+                )
+            self._usage[proc] -= num_instances
+            if self._usage[proc] <= 0:
                 del self._usage[proc]
-            self._num_instances_free += 1
+            self._num_instances_free += num_instances
             self._waiting.pop()
 
     @contextmanager
-    def using(self, proc: Process):
-        self.take(proc)
+    def using(self, proc: Process, num_instances: int = 1):
+        self.take(proc, num_instances)
         yield self
-        self.release(proc)
+        self.release(proc, num_instances)

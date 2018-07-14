@@ -1,4 +1,4 @@
-from typing import Tuple, List, Type
+from typing import Tuple, List, Callable
 
 import pytest
 
@@ -358,12 +358,15 @@ class ResourceTaker(Process):
         self._log.append(self.sim.now())
 
 
-def run_test_resource(class_taker: Type[ResourceTaker], num_instances: int, expected: List[float]) -> None:
+ResourceTakerConstructor = Callable[[Resource, float, List[float]], ResourceTaker]
+
+
+def run_test_resource(constructor: ResourceTakerConstructor, num_instances: int, expected: List[float]) -> None:
     sim = Simulator()
     resource = Resource(sim, num_instances)
     log: List[float] = []
     for n in range(8):
-        class_taker(resource, float(n + 1), log)
+        constructor(resource, float(n + 1), log)
     sim.start()
     assert expected == pytest.approx(log)
 
@@ -385,3 +388,68 @@ class ResourceTakerWith(ResourceTaker):
 
 def test_resource_context_manager(simulator, log_time):
     run_test_resource(ResourceTakerWith, 2, [1.0, 2.0, 4.0, 6.0, 9.0, 12.0, 16.0, 20.0])
+
+
+class ResourceTakerManyReenter(ResourceTaker):
+
+    def _run(self) -> None:
+        num_inst_to_take = int(self._delay)
+        for n in range(num_inst_to_take):
+            self._resource.take(self)
+        self.do_while_holding_resource()
+        for n in range(num_inst_to_take):
+            self.advance(1.0)
+            self._resource.release(self)
+
+
+# def test_resource_many_renenter(simulator, log_time):
+#     run_test_resource(ResourceTakerManyReenter, 8, [2.0, 4.0, 6.0, 12.0, 22.0, 34.0, 48.0, 64.0])
+
+
+class ResourceTakerManyOnce(ResourceTaker):
+
+    def _run(self) -> None:
+        with self._resource.using(self, int(self._delay)):
+            self.do_while_holding_resource()
+
+
+# def test_resource_many_once(simulator, log_time):
+#     run_test_resource(ResourceTakerManyOnce, 10, [1.0, 2.0, 3.0, 4.0, 8.0, 14.0, 21.0, 29.0])
+
+
+class ResourceTakeRelease(Process):
+
+    def __init__(self, resource: Resource, num_take: int, num_release: int) -> None:
+        super().__init__(resource.sim)
+        self._resource = resource
+        self._num_take = num_take
+        self._num_release = num_release
+
+    def _run(self) -> None:
+        self._resource.take(self, self._num_take)
+        self.advance(1.0)
+        self._resource.release(self, self._num_release)
+
+
+def run_resource_test_incoherent(num_take: int, num_release: int):
+    sim = Simulator()
+    resource = Resource(sim, 5)
+    with pytest.raises(ValueError):
+        ResourceTakeRelease(resource, num_take, num_release)
+        sim.start()
+        assert resource.num_instances_free >= 0
+        assert resource.num_instances_total == 5
+
+
+def test_resource_take_less_than_1():
+    for num in [0, -1]:
+        run_resource_test_incoherent(num, 1)
+
+
+def test_resource_take_more_than_max():
+    run_resource_test_incoherent(6, 0)
+
+
+def test_resource_release_more_than_take():
+    run_resource_test_incoherent(1, 2)
+    run_resource_test_incoherent(3, 5)
