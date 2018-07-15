@@ -1,4 +1,4 @@
-# Discrete Event Simulator
+# greensim: discrete event simulation toolkit
 
 This is a set of simple tools for modeling and running simulations of discrete
 event systems. It is composed of two classes: `Simulator`, which articulates a

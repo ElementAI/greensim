@@ -7,7 +7,7 @@ import sys
 import time
 from typing import cast, Callable, Sequence, Tuple, IO, Optional, Union
 
-from sim import Simulator, Process
+from greensim import Simulator, Process
 
 
 MetricProgress = Sequence[float]
