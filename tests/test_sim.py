@@ -1,6 +1,8 @@
-from typing import Tuple, List
+from typing import Tuple, List, Callable
+
 import pytest
-from sim import Simulator, Process, Queue, Gate
+
+from sim import Simulator, Process, Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -246,8 +248,27 @@ def test_queue_join_pop_chrono(simulator, log_test_queue):
 
 
 def test_queue_join_pop_evenodd(simulator, log_test_queue):
-    run_test_queue_join_pop(Queue(simulator, lambda process, counter: (process.name % 2, counter)), log_test_queue)
+    run_test_queue_join_pop(
+        Queue(simulator, lambda process, counter: counter + 1000000 * (process.name % 2)),
+        log_test_queue
+    )
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue
+
+
+def test_queue_pop_empty(simulator: Simulator, log_test_queue: LogTestQueue):
+    queue: Queue = Queue(simulator)
+    Queuer(1, queue, log_test_queue, 1.0)
+    # for delay in [10.0, 20.0]:
+    #     simulator.schedule(delay, lambda sim: queue.pop())
+    simulator.start()
+    assert [] == log_test_queue
+    queue.pop()
+    simulator.start()
+    assert [1] == log_test_queue
+    assert queue.is_empty()
+    queue.pop()  # Raises an exception unless empty queue is properly processed.
+    simulator.start()
+    assert [1] == log_test_queue
 
 
 @pytest.fixture
@@ -320,3 +341,102 @@ def test_gate_crosser_closing(gate, log_time):
     gate.close()
     gate.sim.start()
     assert schedule_gate_open == pytest.approx(log_time)
+
+
+class ResourceTaker(Process):
+
+    def __init__(self, resource: Resource, delay_with: float, log: List[float]) -> None:
+        super().__init__(resource.sim)
+        self._resource = resource
+        self._delay = delay_with
+        self._log = log
+
+    def _run(self) -> None:
+        self._resource.take(self)
+        self.do_while_holding_resource()
+        self._resource.release(self)
+
+    def do_while_holding_resource(self) -> None:
+        self.advance(self._delay)
+        self._log.append(self.sim.now())
+
+
+ResourceTakerConstructor = Callable[[Resource, float, List[float]], ResourceTaker]
+
+
+def run_test_resource(constructor: ResourceTakerConstructor, num_instances: int, expected: List[float]) -> None:
+    sim = Simulator()
+    resource = Resource(sim, num_instances)
+    log: List[float] = []
+    for n in range(8):
+        constructor(resource, float(n + 1), log)
+    sim.start()
+    assert expected == pytest.approx(log)
+
+
+def test_resource_take_release_1():
+    run_test_resource(ResourceTaker, 1, [1.0, 3.0, 6.0, 10.0, 15.0, 21.0, 28.0, 36.0])
+
+
+def test_resource_take_release_5(simulator: Simulator):
+    run_test_resource(ResourceTaker, 5, [1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 9.0, 11.0])
+
+
+class ResourceTakerWith(ResourceTaker):
+
+    def _run(self) -> None:
+        with self._resource.using(self):
+            self.do_while_holding_resource()
+
+
+def test_resource_context_manager(simulator, log_time):
+    run_test_resource(ResourceTakerWith, 2, [1.0, 2.0, 4.0, 6.0, 9.0, 12.0, 16.0, 20.0])
+
+
+class ResourceTakerManyOnce(ResourceTaker):
+
+    def _run(self) -> None:
+        with self._resource.using(self, int(self._delay)):
+            self.do_while_holding_resource()
+
+
+def test_resource_many_once(simulator, log_time):
+    run_test_resource(ResourceTakerManyOnce, 10, [1.0, 2.0, 3.0, 4.0, 8.0, 14.0, 21.0, 29.0])
+
+
+class ResourceTakeRelease(Process):
+
+    def __init__(self, resource: Resource, num_take: int, num_release: int) -> None:
+        super().__init__(resource.sim)
+        self._resource = resource
+        self._num_take = num_take
+        self._num_release = num_release
+
+    def _run(self) -> None:
+        self._resource.take(self, self._num_take)
+        self.advance(1.0)
+        self._resource.release(self, self._num_release)
+
+
+def run_resource_test_incoherent(num_take: int, num_release: int):
+    sim = Simulator()
+    resource = Resource(sim, 5)
+    with pytest.raises(ValueError):
+        ResourceTakeRelease(resource, num_take, num_release)
+        sim.start()
+        assert resource.num_instances_free >= 0
+        assert resource.num_instances_total == 5
+
+
+def test_resource_take_less_than_1():
+    for num in [0, -1]:
+        run_resource_test_incoherent(num, 1)
+
+
+def test_resource_take_more_than_max():
+    run_resource_test_incoherent(6, 0)
+
+
+def test_resource_release_more_than_take():
+    run_resource_test_incoherent(1, 2)
+    run_resource_test_incoherent(3, 5)

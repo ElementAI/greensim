@@ -2,10 +2,10 @@
 Core tools for building simulations.
 """
 
-
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from heapq import heappush, heappop
-from typing import Callable, Tuple, List, Iterable, Any, TypeVar, Optional
+from typing import Callable, Tuple, List, Iterable, Any, Optional, Dict, cast
 
 import greenlet
 
@@ -175,45 +175,41 @@ class Process(ABC):
         self.schedule(0.0)
 
 
-class Ordered(metaclass=ABCMeta):
-    @abstractmethod
-    def __lt__(self, other: Any) -> bool:
-        ...
-
-
-Orderable = TypeVar('Orderable', bound=Ordered)
-GetQueueOrderToken = Callable[[Process, int], Orderable]
-
-
 class Queue(object):
 
-    def __init__(self, sim: Simulator, get_order_token: Optional[GetQueueOrderToken] = None) -> None:
+    GetOrderToken = Callable[[Process, int], int]
+
+    def __init__(self, sim: Simulator, get_order_token: Optional[GetOrderToken] = None) -> None:
         super().__init__()
         self.sim = sim
-        self._waiting: List[Process] = []
+        self._waiting: List[Tuple[int, Process, Optional[Any]]] = []
         self._counter = 0
         self._get_order_token = get_order_token or (lambda process, counter: counter)
 
     def is_empty(self):
         return len(self._waiting) == 0
 
-    def join(self, process):
+    def peek(self) -> Tuple[Process, Optional[Any]]:
+        return self._waiting[0][1:]
+
+    def join(self, process: Process, tag: Optional[Any] = None):
         self._counter += 1
-        heappush(self._waiting, (self._get_order_token(process, self._counter), process))
+        heappush(self._waiting, (self._get_order_token(process, self._counter), process, tag))
         process.pause()
 
     def pop(self):
-        _, process = heappop(self._waiting)
-        process.resume()
+        if not self.is_empty():
+            _, process, _ = heappop(self._waiting)
+            process.resume()
 
 
 class Gate(object):
 
-    def __init__(self, sim: Simulator, get_queue_order_token: Optional[GetQueueOrderToken] = None) -> None:
+    def __init__(self, sim: Simulator, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
         super().__init__()
         self.sim = sim
         self._is_open = True
-        self._queue = Queue(sim, get_queue_order_token)
+        self._queue = Queue(sim, get_order_token)
 
     @property
     def is_open(self) -> bool:
@@ -232,3 +228,60 @@ class Gate(object):
     def cross(self, process: Process) -> None:
         while not self.is_open:
             self._queue.join(process)
+
+
+class Resource(object):
+
+    def __init__(
+        self,
+        sim: Simulator,
+        num_instances: int = 1,
+        get_order_token: Optional[Queue.GetOrderToken] = None
+    ) -> None:
+        super().__init__()
+        self.sim = sim
+        self._num_instances_free = num_instances
+        self._waiting = Queue(sim, get_order_token)
+        self._usage: Dict[Process, int] = {}
+
+    @property
+    def num_instances_free(self):
+        return self._num_instances_free
+
+    @property
+    def num_instances_total(self):
+        return self.num_instances_free + sum(self._usage.values())
+
+    def take(self, proc: Process, num_instances: int = 1):
+        if num_instances < 1:
+            raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
+        if num_instances > self.num_instances_total:
+            raise ValueError(
+                f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
+            )
+        if self._num_instances_free < num_instances:
+            self._waiting.join(proc, tag=num_instances)
+        self._num_instances_free -= num_instances
+        self._usage.setdefault(proc, 0)
+        self._usage[proc] += num_instances
+
+    def release(self, proc: Process, num_instances: int = 1):
+        if self._usage.get(proc, 0) > 0:
+            if num_instances > self._usage[proc]:
+                raise ValueError(
+                    f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
+                )
+            self._usage[proc] -= num_instances
+            if self._usage[proc] <= 0:
+                del self._usage[proc]
+            self._num_instances_free += num_instances
+            if not self._waiting.is_empty():
+                num_instances_next = cast(int, self._waiting.peek()[1])
+                if num_instances_next <= self.num_instances_free:
+                    self._waiting.pop()
+
+    @contextmanager
+    def using(self, proc: Process, num_instances: int = 1):
+        self.take(proc, num_instances)
+        yield self
+        self.release(proc, num_instances)
