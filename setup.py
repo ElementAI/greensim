@@ -3,10 +3,10 @@ from setuptools import setup
 
 # version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
 setup(
-    name='sim',
+    name='greensim',
     version='1.1.2',
-    packages=['sim'],
+    packages=['greensim'],
     install_requires=['greenlet==0.4.13'],
-    description='Discrete Event Simulator',
+    description='Discrete event simulation toolkit based on greenlets',
     long_description=open('README.md').read()
 )

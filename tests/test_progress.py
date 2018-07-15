@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from sim import Simulator, Process
-from sim.progress import _display_time, _divide_round, ProgressTracker, sim_time, combine
+from greensim import Simulator, Process
+from greensim.progress import _display_time, _divide_round, ProgressTracker, sim_time, combine
 
 
 def test_divide_round():

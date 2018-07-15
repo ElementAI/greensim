@@ -2,7 +2,7 @@ from typing import Tuple, List, Callable
 
 import pytest
 
-from sim import Simulator, Process, Queue, Gate, Resource
+from greensim import Simulator, Process, Queue, Gate, Resource
 
 
 def test_schedule_none():
