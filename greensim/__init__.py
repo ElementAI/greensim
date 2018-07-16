@@ -128,6 +128,7 @@ class Process(greenlet.greenlet):
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet):
         super().__init__(run, parent)
         self.sim = sim
+        self.local = {}
 
     @staticmethod
     def current() -> 'Process':
@@ -165,32 +166,31 @@ def stop() -> None:
     Process.current().sim.stop()
 
 
-# class Queue(object):
+class Queue(object):
 
-#     GetOrderToken = Callable[[Process, int], int]
+    GetOrderToken = Callable[[int], int]
 
-#     def __init__(self, sim: Simulator, get_order_token: Optional[GetOrderToken] = None) -> None:
-#         super().__init__()
-#         self.sim = sim
-#         self._waiting: List[Tuple[int, Process, Optional[Any]]] = []
-#         self._counter = 0
-#         self._get_order_token = get_order_token or (lambda process, counter: counter)
+    def __init__(self, get_order_token: Optional[GetOrderToken] = None) -> None:
+        super().__init__()
+        self._waiting: List[Tuple[int, Process]] = []
+        self._counter = 0
+        self._get_order_token = get_order_token or (lambda counter: counter)
 
-#     def is_empty(self):
-#         return len(self._waiting) == 0
+    def is_empty(self):
+        return len(self._waiting) == 0
 
-#     def peek(self) -> Tuple[Process, Optional[Any]]:
-#         return self._waiting[0][1:]
+    def peek(self) -> Process:
+        return self._waiting[0][1:]
 
-#     def join(self, process: Process, tag: Optional[Any] = None):
-#         self._counter += 1
-#         heappush(self._waiting, (self._get_order_token(process, self._counter), process, tag))
-#         process.pause()
+    def join(self):
+        self._counter += 1
+        heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
+        pause()
 
-#     def pop(self):
-#         if not self.is_empty():
-#             _, process, _ = heappop(self._waiting)
-#             process.resume()
+    def pop(self):
+        if not self.is_empty():
+            _, process = heappop(self._waiting)
+            process.resume()
 
 
 # class Gate(object):

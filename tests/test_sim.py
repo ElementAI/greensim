@@ -2,7 +2,7 @@ from typing import Tuple, List, Callable
 
 import pytest
 
-from greensim import Simulator, now, advance, pause #Queue, Gate, Resource
+from greensim import Simulator, Process, now, advance, pause, Queue #Gate, Resource
 
 
 def test_schedule_none():
@@ -86,26 +86,6 @@ def test_process_multiple():
     )
 
 
-# class Process2(Process):
-
-#     def __init__(self, sim: Simulator, name: str, delay_start: float = 0) -> None:
-#         super().__init__(sim, delay_start)
-#         self.name = name
-
-#         self.results: List[Tuple] = []
-
-#     def _run(self):
-#         self.results.append((self.sim.now(), self.name, 0))
-#         self.advance(2)
-#         self.results.append((self.sim.now(), self.name, 1))
-#         self.advance(2)
-#         self.results.append((self.sim.now(), self.name, 2))
-#         self.advance(2)
-#         self.results.append((self.sim.now(), self.name, 3))
-#         self.advance(2)
-#         self.results.append((self.sim.now(), self.name, 4))
-
-
 def test_interleaved_sequence():
     def process(name, results, delay_start):
         advance(delay_start)
@@ -143,32 +123,7 @@ def test_schedule_functions():
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == results
 
 
-@pytest.fixture
-def simulator():
-    return Simulator()
-
-
-# class ProcessPausing(Process):
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         self._counter = 0
-
-#     @property
-#     def counter(self):
-#         return self._counter
-
-#     def _increment(self):
-#         self._counter += 1
-
-#     def _run(self):
-#         self._increment()
-#         self.pause()
-#         self.advance(1.0)
-#         self._increment()
-
-
-def test_process_pause_resume(simulator):
+def test_process_pause_resume():
     counter = 0
     def pausing():
         nonlocal counter
@@ -178,86 +133,67 @@ def test_process_pause_resume(simulator):
         advance(1.0)
         counter += 1
 
-    process = simulator.add(pausing)
-    simulator.run()
-    assert simulator.now() == pytest.approx(1.0)
+    sim = Simulator()
+    process = sim.add(pausing)
+    sim.run()
+    assert sim.now() == pytest.approx(1.0)
     assert counter == 1
-    simulator.run()
-    assert simulator.now() == pytest.approx(1.0)
+    sim.run()
+    assert sim.now() == pytest.approx(1.0)
     assert counter == 1
     process.resume()
-    simulator.run()
-    assert simulator.now() == pytest.approx(2.0)
+    sim.run()
+    assert sim.now() == pytest.approx(2.0)
     assert counter == 2
 
 
-# LogTestQueue = List[int]
+def queuer(name: int, queue: Queue, log: List[int], delay: float):
+    Process.current().local["name"] = name
+    advance(delay)
+    queue.join()
+    log.append(name)
 
 
-# class Queuer(Process):
-
-#     def __init__(self, name: int, queue, log: LogTestQueue, delay) -> None:
-#         super().__init__(queue.sim, delay)
-#         self.name = name
-#         self._queue = queue
-#         self._log = log
-
-#     def _run(self):
-#         self._queue.join(self)
-#         self._log.append(self.name)
+def dequeueing(queue, delay):
+    advance(delay)
+    while not queue.is_empty():
+        advance(1.0)
+        queue.pop()
 
 
-# class Dequeueing(Process):
-
-#     def __init__(self, queue, delay):
-#         super().__init__(queue.sim, delay)
-#         self._queue = queue
-
-#     def _run(self):
-#         while not self._queue.is_empty():
-#             self.advance(1.0)
-#             self._queue.pop()
+def run_test_queue_join_pop(queue: Queue) -> List[int]:
+    sim = Simulator()
+    log = []
+    for n in range(10):
+        sim.add(queuer, n, queue, log, float(n + 1))
+    sim.add(dequeueing, queue, 100.0)
+    sim.run()
+    return log
 
 
-# @pytest.fixture
-# def log_test_queue() -> LogTestQueue:
-#     return []
+def test_queue_join_pop_chrono():
+    assert list(range(10)) == run_test_queue_join_pop(Queue())
 
 
-# def run_test_queue_join_pop(queue: Queue, log: LogTestQueue) -> None:
-#     for n in range(10):
-#         Queuer(n, queue, log, float(n + 1))
-#     Dequeueing(queue, 100.0)
-#     queue.sim.run()
+def test_queue_join_pop_evenodd():
+    assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == \
+        run_test_queue_join_pop(Queue(lambda counter: counter + 1000000 * (Process.current().local["name"] % 2)))
 
 
-# def test_queue_join_pop_chrono(simulator, log_test_queue):
-#     run_test_queue_join_pop(Queue(simulator), log_test_queue)
-#     assert list(range(10)) == log_test_queue
-
-
-# def test_queue_join_pop_evenodd(simulator, log_test_queue):
-#     run_test_queue_join_pop(
-#         Queue(simulator, lambda process, counter: counter + 1000000 * (process.name % 2)),
-#         log_test_queue
-#     )
-#     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == log_test_queue
-
-
-# def test_queue_pop_empty(simulator: Simulator, log_test_queue: LogTestQueue):
-#     queue: Queue = Queue(simulator)
-#     Queuer(1, queue, log_test_queue, 1.0)
-#     # for delay in [10.0, 20.0]:
-#     #     simulator.schedule(delay, lambda sim: queue.pop())
-#     simulator.run()
-#     assert [] == log_test_queue
-#     queue.pop()
-#     simulator.run()
-#     assert [1] == log_test_queue
-#     assert queue.is_empty()
-#     queue.pop()  # Raises an exception unless empty queue is properly processed.
-#     simulator.run()
-#     assert [1] == log_test_queue
+def test_queue_pop_empty():
+    sim = Simulator()
+    queue = Queue()
+    log = []
+    sim.add(queuer, 1, queue, log, 1.0)
+    sim.run()
+    assert [] == log
+    queue.pop()
+    sim.run()
+    assert [1] == log
+    assert queue.is_empty()
+    queue.pop()  # Raises an exception unless empty queue is properly processed.
+    sim.run()
+    assert [1] == log
 
 
 # @pytest.fixture
