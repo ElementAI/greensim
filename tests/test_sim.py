@@ -2,7 +2,7 @@ from typing import Tuple, List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, Queue #Gate, Resource
+from greensim import Simulator, Process, now, advance, pause, Queue, Gate#, Resource
 
 
 def test_schedule_none():
@@ -196,47 +196,38 @@ def test_queue_pop_empty():
     assert [1] == log
 
 
-# @pytest.fixture
-# def gate(simulator):
-#     return Gate(simulator)
+def go_through(gate: Gate, times_cross_expected: List[float], delay_between: float):
+    for expected in times_cross_expected:
+        advance(delay_between)
+        gate.cross()
+        assert pytest.approx(expected) == now()
 
 
-# class GoThrough(Process):
-
-#     def __init__(self, gate, times_cross_expected, time_between):
-#         super().__init__(gate.sim)
-#         self._gate = gate
-#         self._times_cross_expected = times_cross_expected
-#         self._time_between = time_between
-
-#     def _run(self):
-#         for expected in self._times_cross_expected:
-#             self.advance(self._time_between)
-#             self._gate.cross(self)
-#             assert pytest.approx(expected) == self.sim.now()
+def test_gate_already_open():
+    sim = Simulator()
+    gate = Gate().open()
+    sim.add(go_through, gate, [1.0], 1.0)
+    sim.run()
 
 
-# def test_gate_already_open(gate):
-#     gate.open()
-#     GoThrough(gate, [1.0], 1.0)
-#     gate.sim.run()
+def test_gate_wait_open():
+    sim = Simulator()
+    gate = Gate().close()
+    sim.add(go_through, gate, [3.0, 4.0], 1.0)
+    sim.schedule(3.0, gate.open)
+    sim.run()
 
 
-# def test_gate_wait_open(gate):
-#     gate.close()
-#     GoThrough(gate, [3.0, 4.0], 1.0)
-#     gate.sim.schedule(3.0, lambda sim: gate.open())
-#     gate.sim.run()
-
-
-# def test_gate_toggling(gate):
-#     gate.close()
-#     GoThrough(gate, [3.0, 4.0, 10.0, 13.0], 1.0)
-#     gate.sim.schedule(3.0, lambda sim: gate.open())
-#     gate.sim.schedule(4.5, lambda sim: gate.close())
-#     gate.sim.schedule(10.0, lambda sim: gate.open())
-#     gate.sim.schedule(10.1, lambda sim: gate.close())
-#     gate.sim.schedule(13.0, lambda sim: gate.open())
+def test_gate_toggling():
+    sim = Simulator()
+    gate = Gate().close()
+    sim.add(go_through, gate, [3.0, 4.0, 10.0, 13.0], 1.0)
+    sim.schedule(3.0, gate.open)
+    sim.schedule(4.5, gate.close)
+    sim.schedule(10.0, gate.open)
+    sim.schedule(10.1, gate.close)
+    sim.schedule(13.0, gate.open)
+    sim.run()
 
 
 # @pytest.fixture
@@ -252,20 +243,24 @@ def test_queue_pop_empty():
 #         self._log = log
 
 #     def _run(self) -> None:
-#         self._gate.cross(self)
-#         self._gate.close()
-#         self._log.append(self.sim.now())
 
 
-# def test_gate_crosser_closing(gate, log_time):
-#     for n in range(5):
-#         CrosserClosing(gate, log_time)
-#     schedule_gate_open = [4.0, 9.0, 9.1, 200.0, 3000.0]
-#     for moment in schedule_gate_open:
-#         gate.sim.schedule(moment, lambda sim: gate.open())
-#     gate.close()
-#     gate.sim.run()
-#     assert schedule_gate_open == pytest.approx(log_time)
+def test_gate_crosser_closing():
+    def crosser_closing(gate: Gate, log: List[float]):
+        gate.cross()
+        gate.close()
+        log.append(now())
+
+    sim = Simulator()
+    gate = Gate().close()
+    log_time = []
+    for n in range(5):
+        sim.add(crosser_closing, gate, log_time)
+    schedule_gate_open = [4.0, 9.0, 9.1, 200.0, 3000.0]
+    for moment in schedule_gate_open:
+        sim.schedule(moment, gate.open)
+    sim.run()
+    assert schedule_gate_open == pytest.approx(log_time)
 
 
 # class ResourceTaker(Process):

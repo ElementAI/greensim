@@ -193,31 +193,30 @@ class Queue(object):
             process.resume()
 
 
-# class Gate(object):
+class Gate(object):
 
-#     def __init__(self, sim: Simulator, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
-#         super().__init__()
-#         self.sim = sim
-#         self._is_open = True
-#         self._queue = Queue(sim, get_order_token)
+    def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
+        super().__init__()
+        self._is_open = True
+        self._queue = Queue(get_order_token)
 
-#     @property
-#     def is_open(self) -> bool:
-#         return self._is_open
+    @property
+    def is_open(self) -> bool:
+        return self._is_open
 
-#     def open(self) -> "Gate":
-#         self._is_open = True
-#         while not self._queue.is_empty():
-#             self._queue.pop()
-#         return self
+    def open(self) -> "Gate":
+        self._is_open = True
+        while not self._queue.is_empty():
+            self._queue.pop()
+        return self
 
-#     def close(self) -> "Gate":
-#         self._is_open = False
-#         return self
+    def close(self) -> "Gate":
+        self._is_open = False
+        return self
 
-#     def cross(self, process: Process) -> None:
-#         while not self.is_open:
-#             self._queue.join(process)
+    def cross(self) -> None:
+        while not self.is_open:
+            self._queue.join()
 
 
 # class Resource(object):
