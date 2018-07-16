@@ -180,7 +180,7 @@ class Queue(object):
         return len(self._waiting) == 0
 
     def peek(self) -> Process:
-        return self._waiting[0][1:]
+        return self._waiting[0][1]
 
     def join(self):
         self._counter += 1
@@ -219,58 +219,56 @@ class Gate(object):
             self._queue.join()
 
 
-# class Resource(object):
+class Resource(object):
 
-#     def __init__(
-#         self,
-#         sim: Simulator,
-#         num_instances: int = 1,
-#         get_order_token: Optional[Queue.GetOrderToken] = None
-#     ) -> None:
-#         super().__init__()
-#         self.sim = sim
-#         self._num_instances_free = num_instances
-#         self._waiting = Queue(sim, get_order_token)
-#         self._usage: Dict[Process, int] = {}
+    def __init__(self, num_instances: int = 1, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
+        super().__init__()
+        self._num_instances_free = num_instances
+        self._waiting = Queue(get_order_token)
+        self._usage: Dict[Process, int] = {}
 
-#     @property
-#     def num_instances_free(self):
-#         return self._num_instances_free
+    @property
+    def num_instances_free(self):
+        return self._num_instances_free
 
-#     @property
-#     def num_instances_total(self):
-#         return self.num_instances_free + sum(self._usage.values())
+    @property
+    def num_instances_total(self):
+        return self.num_instances_free + sum(self._usage.values())
 
-#     def take(self, proc: Process, num_instances: int = 1):
-#         if num_instances < 1:
-#             raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
-#         if num_instances > self.num_instances_total:
-#             raise ValueError(
-#                 f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
-#             )
-#         if self._num_instances_free < num_instances:
-#             self._waiting.join(proc, tag=num_instances)
-#         self._num_instances_free -= num_instances
-#         self._usage.setdefault(proc, 0)
-#         self._usage[proc] += num_instances
+    def take(self, num_instances: int = 1):
+        if num_instances < 1:
+            raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
+        if num_instances > self.num_instances_total:
+            raise ValueError(
+                f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
+            )
+        proc = Process.current()
+        if self._num_instances_free < num_instances:
+            proc.local["num_instances"] = num_instances
+            self._waiting.join()
+            del proc.local["num_instances"]
+        self._num_instances_free -= num_instances
+        self._usage.setdefault(proc, 0)
+        self._usage[proc] += num_instances
 
-#     def release(self, proc: Process, num_instances: int = 1):
-#         if self._usage.get(proc, 0) > 0:
-#             if num_instances > self._usage[proc]:
-#                 raise ValueError(
-#                     f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
-#                 )
-#             self._usage[proc] -= num_instances
-#             if self._usage[proc] <= 0:
-#                 del self._usage[proc]
-#             self._num_instances_free += num_instances
-#             if not self._waiting.is_empty():
-#                 num_instances_next = cast(int, self._waiting.peek()[1])
-#                 if num_instances_next <= self.num_instances_free:
-#                     self._waiting.pop()
+    def release(self, num_instances: int = 1):
+        proc = Process.current()
+        if self._usage.get(proc, 0) > 0:
+            if num_instances > self._usage[proc]:
+                raise ValueError(
+                    f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
+                )
+            self._usage[proc] -= num_instances
+            if self._usage[proc] <= 0:
+                del self._usage[proc]
+            self._num_instances_free += num_instances
+            if not self._waiting.is_empty():
+                num_instances_next = cast(int, self._waiting.peek().local["num_instances"])
+                if num_instances_next <= self.num_instances_free:
+                    self._waiting.pop()
 
-#     @contextmanager
-#     def using(self, proc: Process, num_instances: int = 1):
-#         self.take(proc, num_instances)
-#         yield self
-#         self.release(proc, num_instances)
+    @contextmanager
+    def using(self, num_instances: int = 1):
+        self.take(num_instances)
+        yield self
+        self.release(num_instances)
