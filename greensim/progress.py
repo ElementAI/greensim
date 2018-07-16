@@ -5,29 +5,28 @@ Progress tracking tools for simulations.
 from math import ceil, inf
 import sys
 import time
-from typing import cast, Callable, Sequence, Tuple, IO, Optional, Union
+from typing import Callable, Sequence, Tuple, IO, Optional, Union
 
-from greensim import Simulator, Process
+from greensim import now, advance, stop
 
 
 MetricProgress = Sequence[float]
-MeasurerProgress = Callable[[], MetricProgress]  # Typically set up as a closure or a bound method.
+MeasureProgress = Callable[[], MetricProgress]
 MeasureComparison = Sequence[Tuple[float, float]]
-CapturerProgress = Callable[[float, float, MeasureComparison], None]
+CaptureProgress = Callable[[float, float, MeasureComparison], None]
 
 
-def combine(*measurers: Sequence[MeasurerProgress]) -> MetricProgress:
+def combine(*measures: MeasureProgress) -> MetricProgress:
     """Combines multiple progress measures into one metric."""
-    return sum((list(cast(MeasurerProgress, measurer)()) for measurer in measurers), [])
+    return sum((list(measure()) for measure in measures), [])
 
 
-def sim_time(sim: Simulator):
-    """Progress measure based on the simulated clock."""
-    return lambda: [sim.now()]
+def sim_time():
+    return [now()]
 
 
-def capturer_print(file_dest_maybe: Optional[IO] = None):
-    """Progress capturer that writes updated metrics to an interactive terminal."""
+def capture_print(file_dest_maybe: Optional[IO] = None):
+    """Progress capture that writes updated metrics to an interactive terminal."""
     file_dest: IO = file_dest_maybe or sys.stderr
 
     def _print_progress(progress_min: float, rt_remaining: float, _mc: MeasureComparison) -> None:
@@ -43,7 +42,12 @@ def capturer_print(file_dest_maybe: Optional[IO] = None):
     return _print_progress
 
 
-class ProgressTracker(Process):
+def track_progress(
+    measure: MeasureProgress,
+    target: MetricProgress,
+    interval_check: float,
+    capture_maybe: Optional[CaptureProgress] = None
+) -> None:
     """
     Tracks progress against a certain end condition of the simulation (by
     default, it is a certain duration on the simulated clock), reporting this
@@ -51,51 +55,33 @@ class ProgressTracker(Process):
     target has been reached.
     """
 
-    def __init__(
-        self,
-        sim: Simulator,
-        measurer: MeasurerProgress,
-        target: MetricProgress,
-        interval_check: float,
-        capturer: Optional[CapturerProgress] = None
-    ) -> None:
-        super().__init__(sim)
-        self._measurer = measurer
-        self._target = target
-        self._interval_check = interval_check
-        self._capturer = capturer or capturer_print(sys.stderr)
-        self._rt_started: Optional[float] = None
+    def measure_to_target() -> MeasureComparison:
+        return list(zip(measure(), target))
 
-    def _measure(self) -> MeasureComparison:
-        return list(zip(self._measurer(), self._target))
-
-    def is_finished(self) -> bool:
+    def is_finished(progress: MeasureComparison) -> bool:
         """
         Determines whether simulation is finished, according to given
         progress measure and target.
         """
-        return all(p >= t for p, t in self._measure())
+        return all(p >= t for p, t in progress)
 
-    def _run(self) -> None:
-        while True:
-            if self._rt_started is None:
-                self._rt_started = time.time()
-            else:
-                t = time.time()
-                rt_elapsed = t - cast(float, self._rt_started)
-                measure = self._measure()
-                ratio_progress_min = min(p / t for p, t in measure)
-                if ratio_progress_min == 0.0:
-                    rt_total_projected = inf
-                else:
-                    rt_total_projected = rt_elapsed / ratio_progress_min
-                self._capturer(ratio_progress_min, rt_total_projected - rt_elapsed, measure)
+    capture = capture_maybe or capture_print()
+    rt_started = time.time()
+    while True:
+        advance(interval_check)
 
-                if self.is_finished():
-                    self.sim.stop()
-                    return
+        rt_elapsed = time.time() - rt_started
+        progress = measure_to_target()
+        ratio_progress_min = min(m / t for m, t in progress)
+        if ratio_progress_min == 0.0:
+            rt_total_projected = inf
+        else:
+            rt_total_projected = rt_elapsed / ratio_progress_min
+        capture(ratio_progress_min, rt_total_projected - rt_elapsed, progress)
 
-            self.advance(self._interval_check)
+        if is_finished(progress):
+            stop()
+            break
 
 
 def _divide_round(dividend: Union[float, int], divider: Union[float, int]) -> int:
