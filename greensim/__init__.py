@@ -84,7 +84,9 @@ class Simulator(object):
         functions `now()`, `advance()`, `pause()` and `stop()` to articulate its events across the simulated timeline
         and control the simulation's flow.
         """
-        return self.schedule(0.0, _Process(self, fn_process, self._gr).switch, *args, **kwargs)
+        process = Process(self, fn_process, self._gr)
+        self.schedule(0.0, process.switch, *args, **kwargs)
+        return process
 
     def run(self) -> None:
         """
@@ -121,28 +123,28 @@ class Simulator(object):
         self._gr.switch()
 
 
-class _Process(greenlet.greenlet):
+class Process(greenlet.greenlet):
 
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet):
         super().__init__(run, parent)
         self.sim = sim
 
     @staticmethod
-    def current() -> '_Process':
+    def current() -> 'Process':
         curr = greenlet.getcurrent()
-        if not isinstance(curr, _Process):
-            raise TypeError("Current greenlet does not correspond to a _Process instance.")
-        return cast(_Process, greenlet.getcurrent())
+        if not isinstance(curr, Process):
+            raise TypeError("Current greenlet does not correspond to a Process instance.")
+        return cast(Process, greenlet.getcurrent())
 
     def resume(self) -> None:
         self.sim.schedule(0.0, self.switch)
 
 
-def pause(self) -> None:
+def pause() -> None:
     """
     Pauses the current process indefinitely -- it will require another process to `resume()` it.
     """
-    _Process.current().sim._switch()
+    Process.current().sim._switch()
 
 
 def advance(delay: float) -> None:
@@ -150,17 +152,17 @@ def advance(delay: float) -> None:
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
-    curr = _Process.current()
+    curr = Process.current()
     curr.sim.schedule(delay, curr.switch)
     curr.sim._switch()
 
 
 def now() -> float:
-    return _Process.current().sim.now()
+    return Process.current().sim.now()
 
 
 def stop() -> None:
-    _Process.current().sim.stop()
+    Process.current().sim.stop()
 
 
 # class Queue(object):

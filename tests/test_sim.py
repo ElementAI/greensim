@@ -2,7 +2,7 @@ from typing import Tuple, List, Callable
 
 import pytest
 
-from greensim import Simulator, now, advance #Queue, Gate, Resource
+from greensim import Simulator, now, advance, pause #Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -59,7 +59,9 @@ def test_process_advance():
         ll.append(now())
 
     ll = []
-    Simulator().add(process, ll).run()
+    sim = Simulator()
+    sim.add(process, ll)
+    sim.run()
     assert ll == [0.0, 1.0, 6.0]
 
 
@@ -123,9 +125,6 @@ def test_interleaved_sequence():
     assert not sim.is_running()
 
 
-# test_functions_result = []
-
-
 def test_schedule_functions():
     def f1(sim, results):
         res = f"1 + {sim.now()}"
@@ -144,9 +143,9 @@ def test_schedule_functions():
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == results
 
 
-# @pytest.fixture
-# def simulator():
-#     return Simulator()
+@pytest.fixture
+def simulator():
+    return Simulator()
 
 
 # class ProcessPausing(Process):
@@ -169,18 +168,27 @@ def test_schedule_functions():
 #         self._increment()
 
 
-# def test_process_pause_resume(simulator):
-#     pp = ProcessPausing(simulator, delay_start=1.0)
-#     simulator.start()
-#     assert simulator.now() == pytest.approx(1.0)
-#     assert pp.counter == 1
-#     simulator.start()
-#     assert simulator.now() == pytest.approx(1.0)
-#     assert pp.counter == 1
-#     pp.resume()
-#     simulator.start()
-#     assert simulator.now() == pytest.approx(2.0)
-#     assert pp.counter == 2
+def test_process_pause_resume(simulator):
+    counter = 0
+    def pausing():
+        nonlocal counter
+        advance(1.0)
+        counter += 1
+        pause()
+        advance(1.0)
+        counter += 1
+
+    process = simulator.add(pausing)
+    simulator.run()
+    assert simulator.now() == pytest.approx(1.0)
+    assert counter == 1
+    simulator.run()
+    assert simulator.now() == pytest.approx(1.0)
+    assert counter == 1
+    process.resume()
+    simulator.run()
+    assert simulator.now() == pytest.approx(2.0)
+    assert counter == 2
 
 
 # LogTestQueue = List[int]
@@ -241,14 +249,14 @@ def test_schedule_functions():
 #     Queuer(1, queue, log_test_queue, 1.0)
 #     # for delay in [10.0, 20.0]:
 #     #     simulator.schedule(delay, lambda sim: queue.pop())
-#     simulator.start()
+#     simulator.run()
 #     assert [] == log_test_queue
 #     queue.pop()
-#     simulator.start()
+#     simulator.run()
 #     assert [1] == log_test_queue
 #     assert queue.is_empty()
 #     queue.pop()  # Raises an exception unless empty queue is properly processed.
-#     simulator.start()
+#     simulator.run()
 #     assert [1] == log_test_queue
 
 
