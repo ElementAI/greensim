@@ -5,9 +5,9 @@ Progress tracking tools for simulations.
 from math import ceil, inf
 import sys
 import time
-from typing import cast, Callable, Sequence, Tuple, IO, Optional, Union
+from typing import Callable, Sequence, Tuple, IO, Optional, Union
 
-from greensim import Simulator, now, advance, stop
+from greensim import now, advance, stop
 
 
 MetricProgress = Sequence[float]
@@ -46,7 +46,7 @@ def track_progress(
     measure: MeasureProgress,
     target: MetricProgress,
     interval_check: float,
-    capture: Optional[CaptureProgress] = None
+    capture_maybe: Optional[CaptureProgress] = None
 ) -> None:
     """
     Tracks progress against a certain end condition of the simulation (by
@@ -65,6 +65,7 @@ def track_progress(
         """
         return all(p >= t for p, t in progress)
 
+    capture = capture_maybe or capture_print()
     rt_started = time.time()
     while True:
         advance(interval_check)

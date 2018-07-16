@@ -1,4 +1,4 @@
-from typing import Tuple, List, Callable
+from typing import List, Callable
 
 import pytest
 
@@ -124,6 +124,7 @@ def test_schedule_functions():
 
 def test_process_pause_resume():
     counter = 0
+
     def pausing():
         nonlocal counter
         advance(1.0)
@@ -162,7 +163,7 @@ def dequeueing(queue, delay):
 
 def run_test_queue_join_pop(queue: Queue) -> List[int]:
     sim = Simulator()
-    log = []
+    log: List[int] = []
     for n in range(10):
         sim.add(queuer, n, queue, log, float(n + 1))
     sim.add(dequeueing, queue, 100.0)

@@ -2,11 +2,10 @@
 Core tools for building simulations.
 """
 
-from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from heapq import heappush, heappop
 from math import inf
-from typing import Callable, Tuple, List, Iterable, Any, Optional, Dict, cast
+from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, MutableMapping, Any
 
 import greenlet
 
@@ -52,7 +51,7 @@ class Simulator(object):
         """
         return self._ts_now
 
-    def events(self) -> Iterable[Tuple[float, Callable]]:
+    def events(self) -> Iterable[Tuple[float, Callable, Sequence, Mapping]]:
         """
         Iterates over scheduled events.
         """
@@ -112,7 +111,6 @@ class Simulator(object):
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
 
-
     def stop(self) -> None:
         """
         Stops the running simulation once the current event is done executing.
@@ -134,10 +132,10 @@ class Simulator(object):
 
 class Process(greenlet.greenlet):
 
-    def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet):
+    def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         super().__init__(run, parent)
         self.sim = sim
-        self.local = {}
+        self.local: MutableMapping[str, Any] = {}
 
     @staticmethod
     def current() -> 'Process':
