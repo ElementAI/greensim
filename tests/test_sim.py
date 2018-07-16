@@ -76,8 +76,7 @@ def test_process_multiple():
     sim.add(tick, "three", 3.0, log)
     sim.add(tick, "seven", 7.0, log)
     sim.add(tick, "eleven", 11.0, log)
-    sim.stop_at(100.0)
-    sim.run()
+    sim.run(100.0)
     assert sorted(
         [(n, "eleven") for n in range(11, 100, 11)] +
         [(n, "seven") for n in range(7, 100, 7)] +

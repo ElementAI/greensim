@@ -5,6 +5,7 @@ Core tools for building simulations.
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from heapq import heappush, heappop
+from math import inf
 from typing import Callable, Tuple, List, Iterable, Any, Optional, Dict, cast
 
 import greenlet
@@ -88,27 +89,35 @@ class Simulator(object):
         self.schedule(0.0, process.switch, *args, **kwargs)
         return process
 
-    def run(self) -> None:
+    def run(self, duration: float = inf) -> None:
         """
         Runs the simulation until a stopping condition is met (no more events, or an event invokes method stop()).
         """
+        counter_stop_event = None
+        if duration != inf:
+            counter_stop_event = self._counter
+            self.schedule(duration, self.stop)
+
         self._is_running = True
         while self.is_running() and len(self._events) > 0:
             self._ts_now, _, event, args, kwargs = heappop(self._events)
             event(*args, **kwargs)
         self.stop()
 
+        if counter_stop_event is not None:
+            # Change the planned stop to a no-op. We would rather eliminate it, but this would force a re-sort of the
+            # event queue.
+            for (i, (moment, counter, _, _, _)) in enumerate(self._events):
+                if counter == counter_stop_event:
+                    self._events[i] = (moment, counter, lambda: None, (), {})
+                    break
+
+
     def stop(self) -> None:
         """
         Stops the running simulation once the current event is done executing.
         """
         self._is_running = False
-
-    def stop_at(self, delay: float) -> 'Simulator':
-        """
-        Schedules stopping the simulator after the given delay.
-        """
-        self.schedule(delay, self.stop)
 
     def is_running(self) -> bool:
         """
