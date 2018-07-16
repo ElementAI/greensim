@@ -2,8 +2,8 @@ import time
 
 import pytest
 
-from greensim import Simulator, Process
-from greensim.progress import _display_time, _divide_round, ProgressTracker, sim_time, combine
+from greensim import Simulator, advance
+from greensim.progress import _display_time, _divide_round, combine, track_progress, sim_time
 
 
 def test_divide_round():
@@ -49,7 +49,7 @@ def test_combine():
 
 
 def has_tracker(sim, tracker):
-    return any(event == tracker._gr.switch for _, event in sim.events())
+    return any(event == tracker.switch for _, event, _, _ in sim.events())
 
 
 def test_tracker_lifecycle():
@@ -57,16 +57,15 @@ def test_tracker_lifecycle():
         pass
 
     sim = Simulator()
-    tracker = ProgressTracker(sim, sim_time(sim), [1000.0], 100.0, capture_pass)
+    tracker = sim.add(track_progress, sim_time, [1000.0], 100.0, capture_pass)
     assert has_tracker(sim, tracker)
 
-    def check_tracker(simm):
-        nonlocal tracker
+    def check_tracker(simm: Simulator):
         assert has_tracker(simm, tracker)
 
-    sim.schedule(150.0, check_tracker)
-    sim.schedule(10000.0, lambda: sim.stop())
-    sim.start()
+    sim.schedule(150.0, check_tracker, sim)
+    sim.stop_at(10000.0)
+    sim.run()
     assert not has_tracker(sim, tracker)
     assert sim.now() == pytest.approx(1000.0)
 
@@ -75,7 +74,6 @@ def test_progress_capture():
     log = []
 
     def capture(progress_min, _rt_remaining, mc):
-        nonlocal log
         log.append(progress_min)
 
     a = 0
@@ -83,55 +81,40 @@ def test_progress_capture():
 
     def set_ab(new_a, new_b):
         nonlocal a, b
-
-        def _event(sim):
-            nonlocal a, b
-            a = new_a
-            b = new_b
-
-        return _event
+        a = new_a
+        b = new_b
 
     def measure():
-        nonlocal a, b
         return (a, b)
 
     sim = Simulator()
-    ProgressTracker(sim, measure, [10, 10], 10.0, capture)
-    sim.schedule(15.0, set_ab(2, 0))
-    sim.schedule(25.0, set_ab(4, 1))
-    sim.schedule(35.0, set_ab(4, 6))
-    sim.schedule(45.0, set_ab(5, 9))
-    sim.schedule(55.0, set_ab(10, 10))
-    sim.schedule(100.0, lambda sim: sim.stop())
-    sim.start()
+    sim.add(track_progress, measure, [10, 10], 10.0, capture)
+    sim.schedule(15.0, set_ab, 2, 0)
+    sim.schedule(25.0, set_ab, 4, 1)
+    sim.schedule(35.0, set_ab, 4, 6)
+    sim.schedule(45.0, set_ab, 5, 9)
+    sim.schedule(55.0, set_ab, 10, 10)
+    sim.stop_at(100.0)
+    sim.run()
 
     assert sim.now() == pytest.approx(60.0)
     assert log == pytest.approx([0.0, 0.0, 0.1, 0.4, 0.5, 1.0])
-
-
-class Sleeper(Process):
-
-    def __init__(self, sim, interval, rt_delay):
-        super().__init__(sim)
-        self._interval = interval
-        self._rt_delay = rt_delay
-
-    def _run(self):
-        while True:
-            time.sleep(self._rt_delay)
-            self.advance(self._interval)
 
 
 def test_progress_real_time():
     log = []
 
     def capture(_progress_min, rt_remaining, mc):
-        nonlocal log
         log.append(rt_remaining)
 
+    def sleeper(interval, rt_delay):
+        while True:
+            time.sleep(rt_delay)
+            advance(interval)
+
     sim = Simulator()
-    ProgressTracker(sim, sim_time(sim), [100.0], 20.0, capture)
-    Sleeper(sim, 10.0, 0.1)
-    sim.start()
+    sim.add(track_progress, sim_time, [100.0], 20.0, capture)
+    sim.add(sleeper, 10.0, 0.1)
+    sim.run()
 
     assert log == pytest.approx([0.8, 0.6, 0.4, 0.2, 0.0], abs=1e-2)
