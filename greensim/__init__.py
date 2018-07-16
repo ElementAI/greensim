@@ -98,10 +98,15 @@ class Simulator(object):
 
     def stop(self) -> None:
         """
-        Stops the running simulation once the current event is done
-        executing.
+        Stops the running simulation once the current event is done executing.
         """
         self._is_running = False
+
+    def stop_at(self, delay: float) -> 'Simulator':
+        """
+        Schedules stopping the simulator after the given delay.
+        """
+        self.schedule(delay, self.stop)
 
     def is_running(self) -> bool:
         """
@@ -140,13 +145,14 @@ def pause(self) -> None:
     _Process.current().sim._switch()
 
 
-def advance(self, delay: float) -> None:
+def advance(delay: float) -> None:
     """
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
-    _Process.current().sim.schedule(delay, curr.switch)
-    pause()  # The simulator will resume the process.
+    curr = _Process.current()
+    curr.sim.schedule(delay, curr.switch)
+    curr.sim._switch()
 
 
 def now() -> float:

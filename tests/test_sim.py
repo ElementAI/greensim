@@ -2,7 +2,7 @@ from typing import Tuple, List, Callable
 
 import pytest
 
-from greensim import Simulator#, Queue, Gate, Resource
+from greensim import Simulator, now, advance #Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -50,61 +50,38 @@ def test_schedule_recurring():
     assert ll == list(range(11))
 
 
-# class ProcessTest(Process):
+def test_process_advance():
+    def process(ll):
+        ll.append(now())
+        advance(1.0)
+        ll.append(now())
+        advance(5.0)
+        ll.append(now())
 
-#     def __init__(self, sim):
-#         super().__init__(sim)
-#         self.ll = []
-
-#     def _run(self):
-#         self.ll.append(self.sim.now())
-#         self.advance(1.0)
-#         self.ll.append(self.sim.now())
-#         self.advance(5.0)
-#         self.ll.append(self.sim.now())
-
-
-# def test_process_advance():
-#     sim = Simulator()
-#     proc = ProcessTest(sim)
-#     sim.run()
-#     assert proc.ll == [0.0, 1.0, 6.0]
+    ll = []
+    Simulator().add(process, ll).run()
+    assert ll == [0.0, 1.0, 6.0]
 
 
-# class ProcessConstant(Process):
+def test_process_multiple():
+    def tick(name, period, log):
+        while True:
+            advance(period)
+            log.append((int(now()), name))
 
-#     def __init__(self, sim, name, period, log):
-#         super().__init__(sim, 0)
-#         self.name = name
-#         self.period = period
-#         self.log = log
-
-#     def _run(self):
-#         while True:
-#             self.advance(self.period)
-#             self.log.append((int(self.sim.now()), self.name))
-
-
-# class Stopper(Process):
-
-#     def _run(self):
-#         self.sim.stop()
-
-
-# def test_process_multiple():
-#     sim = Simulator()
-#     log = []
-#     ProcessConstant(sim, "three", 3.0, log)
-#     ProcessConstant(sim, "seven", 7.0, log)
-#     ProcessConstant(sim, "eleven", 11.0, log)
-#     Stopper(sim, 100.0)
-#     sim.run()
-#     assert sorted(
-#         [(n, "eleven") for n in range(11, 100, 11)] +
-#         [(n, "seven") for n in range(7, 100, 7)] +
-#         [(n, "three") for n in range(3, 100, 3)],
-#         key=lambda p: p[0]
-#     )
+    sim = Simulator()
+    log = []
+    sim.add(tick, "three", 3.0, log)
+    sim.add(tick, "seven", 7.0, log)
+    sim.add(tick, "eleven", 11.0, log)
+    sim.stop_at(100.0)
+    sim.run()
+    assert sorted(
+        [(n, "eleven") for n in range(11, 100, 11)] +
+        [(n, "seven") for n in range(7, 100, 7)] +
+        [(n, "three") for n in range(3, 100, 3)],
+        key=lambda p: p[0]
+    )
 
 
 # class Process2(Process):
@@ -127,37 +104,44 @@ def test_schedule_recurring():
 #         self.results.append((self.sim.now(), self.name, 4))
 
 
-# def test_interleaved_sequence():
-#     sim = Simulator()
-#     p1 = Process2(sim, "p1")
-#     p2 = Process2(sim, "p2", delay_start=1)
+def test_interleaved_sequence():
+    def process(name, results, delay_start):
+        advance(delay_start)
+        for n in range(5):
+            results.append((now(), name, n))
+            advance(2)
 
-#     sim.run()
-#     print(p1.results)
-#     print(p2.results)
-#     assert [(0.0, 'p1', 0), (2.0, 'p1', 1), (4.0, 'p1', 2), (6.0, 'p1', 3), (8.0, 'p1', 4)] == p1.results
-#     assert [(1.0, 'p2', 0), (3.0, 'p2', 1), (5.0, 'p2', 2), (7.0, 'p2', 3), (9.0, 'p2', 4)] == p2.results
-#     assert not sim.is_running()
+    sim = Simulator()
+    results_p1 = []
+    sim.add(process, "p1", results_p1, 0)
+    results_p2 = []
+    sim.add(process, "p2", results_p2, 1)
+
+    sim.run()
+    assert [(0.0, 'p1', 0), (2.0, 'p1', 1), (4.0, 'p1', 2), (6.0, 'p1', 3), (8.0, 'p1', 4)] == results_p1
+    assert [(1.0, 'p2', 0), (3.0, 'p2', 1), (5.0, 'p2', 2), (7.0, 'p2', 3), (9.0, 'p2', 4)] == results_p2
+    assert not sim.is_running()
 
 
 # test_functions_result = []
 
 
-# def test_schedule_functions():
-#     def f1(sim):
-#         res = f"1 + {sim.now()}"
-#         test_functions_result.append(res)
+def test_schedule_functions():
+    def f1(sim, results):
+        res = f"1 + {sim.now()}"
+        results.append(res)
 
-#     def f2(sim):
-#         res = f"2 + {sim.now()}"
-#         test_functions_result.append(res)
+    def f2(sim, results):
+        res = f"2 + {sim.now()}"
+        results.append(res)
 
-#     sim = Simulator()
-#     sim.schedule(1, f1)
-#     sim.schedule(2, f2)
-#     sim.schedule(3, f1)
-#     sim.run()
-#     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == test_functions_result
+    sim = Simulator()
+    results = []
+    sim.schedule(1, f1, sim, results)
+    sim.schedule(2, f2, sim, results)
+    sim.schedule(3, f1, sim, results)
+    sim.run()
+    assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == results
 
 
 # @pytest.fixture
