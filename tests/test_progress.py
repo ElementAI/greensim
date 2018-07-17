@@ -1,4 +1,5 @@
 from io import StringIO
+from math import inf
 import time
 
 import pytest
@@ -32,6 +33,10 @@ def test_display_hours():
 def test_display_days():
     assert _display_time(36.0 * 60.0 * 60.0 + 0.1) == (2, "days")
     assert _display_time(78 * 60.0 * 60.0) == (4, "days")
+
+
+def test_display_inf():
+    assert _display_time(inf) == (1, "infinity")
 
 
 def test_combine():

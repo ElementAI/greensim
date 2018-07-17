@@ -2,7 +2,7 @@ from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, Queue, Gate, Resource
+from greensim import Simulator, Process, now, advance, pause, add, Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -164,6 +164,20 @@ def test_getting_current_process():
 
     with pytest.raises(TypeError):
         proc()
+
+
+def test_process_adding_process():
+    log = []
+
+    def proc(delay):
+        advance(delay)
+        log.append(now())
+        add(proc, delay * 2.0)
+
+    sim = Simulator()
+    sim.add(proc, 1.0)
+    sim.run(200.0)
+    assert [1.0, 3.0, 7.0, 15.0, 31.0, 63.0, 127.0] == pytest.approx(log)
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):

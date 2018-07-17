@@ -1,6 +1,6 @@
 # greensim: discrete event simulation toolkit
 
-[![CircleCI](https://circleci.com/gh/ElementAI/greensim.svg?style=svg)](https://circleci.com/gh/ElementAI/greensim)
+[![CircleCI](https://circleci.com/gh/ElementAI/greensim.svg?style=svg&circle-token=31275ead18a30a28dae9e44069f26a4ea58046f0)](https://circleci.com/gh/ElementAI/greensim)
 
 This is a set of simple tools for modeling and running simulations of discrete
 event systems. It is based on the implementation of each independant part of

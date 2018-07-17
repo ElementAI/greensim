@@ -85,22 +85,26 @@ def _divide_round(dividend: Union[float, int], divider: Union[float, int]) -> in
 
 
 def _display_time(seconds: float) -> Tuple[int, str]:
-    delay = _divide_round(seconds, 1)
-    unit = "second"
-
-    if delay > 90:
-        delay = _divide_round(delay, 60)
-        unit = "minute"
+    if seconds == inf:
+        delay = 1
+        unit = "infinity"
+    else:
+        delay = _divide_round(seconds, 1)
+        unit = "second"
 
         if delay > 90:
             delay = _divide_round(delay, 60)
-            unit = "hour"
+            unit = "minute"
 
-            if delay > 36:
-                delay = _divide_round(delay, 24)
-                unit = "day"
+            if delay > 90:
+                delay = _divide_round(delay, 60)
+                unit = "hour"
 
-    if delay > 1:
-        unit += "s"
+                if delay > 36:
+                    delay = _divide_round(delay, 24)
+                    unit = "day"
+
+        if delay > 1:
+            unit += "s"
 
     return delay, unit
