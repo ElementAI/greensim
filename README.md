@@ -20,4 +20,3 @@ understanding.
 
 Reference documentation for classes `Simulator` and `Process` is available as
 docstrings.
-
