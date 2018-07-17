@@ -49,20 +49,16 @@ def track_progress(
     capture_maybe: Optional[CaptureProgress] = None
 ) -> None:
     """
-    Tracks progress against a certain end condition of the simulation (by
-    default, it is a certain duration on the simulated clock), reporting this
-    progress as the simulation chugs along. Stops the simulation once the
-    target has been reached.
+    Tracks progress against a certain end condition of the simulation (for instance, a certain duration on the simulated
+    clock), reporting this progress as the simulation chugs along. Stops the simulation once the target has been
+    reached. By default, the progress is reported as printout on standard output, in a manner that works best for
+    digital terminals.
     """
 
     def measure_to_target() -> MeasureComparison:
         return list(zip(measure(), target))
 
     def is_finished(progress: MeasureComparison) -> bool:
-        """
-        Determines whether simulation is finished, according to given
-        progress measure and target.
-        """
         return all(p >= t for p, t in progress)
 
     capture = capture_maybe or capture_print()
