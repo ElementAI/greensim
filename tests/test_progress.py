@@ -1,9 +1,10 @@
+from io import StringIO
 import time
 
 import pytest
 
 from greensim import Simulator, advance
-from greensim.progress import _display_time, _divide_round, combine, track_progress, sim_time
+from greensim.progress import _display_time, _divide_round, combine, track_progress, sim_time, capture_print
 
 
 def test_divide_round():
@@ -116,3 +117,11 @@ def test_progress_real_time():
     sim.run()
 
     assert log == pytest.approx([0.8, 0.6, 0.4, 0.2, 0.0], abs=1e-2)
+
+
+def test_capture_print():
+    strio = StringIO()
+    pp = capture_print(strio)
+    pp(0.57, 5.0, [(57, 100)])
+    assert "57" in strio.getvalue()
+    assert "5 s" in strio.getvalue()
