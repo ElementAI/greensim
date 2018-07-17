@@ -10,6 +10,7 @@ greenlet = "==0.4.13"
 pytest = "*"
 flake8 = "*"
 mypy = "*"
+pudb = "*"
 
 [requires]
 python_version = "3.6"
