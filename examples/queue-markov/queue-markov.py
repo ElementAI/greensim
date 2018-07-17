@@ -32,6 +32,7 @@ def arrival():
         advance(rng.expovariate(RATE_ARRIVAL))
         add(service)
 
+
 sim.add(arrival)  # Add this process explicitly to bootstrap the system.
 
 
