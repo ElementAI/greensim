@@ -23,6 +23,7 @@ def arrival():
         advance(rnd.expovariate(RATE_ARRIVAL))
         add(service)
 
+
 def service():
     global num_served
     time_start = now()
@@ -30,6 +31,7 @@ def service():
         advance(rnd.expovariate(RATE_SERVICE))
     times_service.append(now() - time_start)
     num_served += 1
+
 
 sim.add(track_progress, lambda: [num_served], [NUM_CLIENTS_STOP], 0.025 * NUM_CLIENTS_STOP)
 sim.add(arrival)
