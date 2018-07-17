@@ -192,6 +192,10 @@ def now() -> float:
     return Process.current().sim.now()
 
 
+def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
+    return Process.current().sim.add(proc, *args, **kwargs)
+
+
 def stop() -> None:
     """
     Stops the ongoing simulation, from a process.
