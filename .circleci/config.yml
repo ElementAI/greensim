@@ -14,15 +14,10 @@ jobs:
       - restore_cache:
           name: Restore cache for dependencies
           key: tests-v1-{{ checksum "Pipfile" }}
-      # - run:
-      #     name: Setup .env file
-      #     command: |
-      #       mv .env.example .env
       - run:
           name: Install dependencies
           command: |
             pipenv install --dev
-            pipenv run pip install coveralls==1.2.0
       - save_cache:
           name: Save cache for dependencies
           key: tests-v1-{{ checksum "Pipfile" }}
@@ -31,9 +26,4 @@ jobs:
       - run:
           name: Run unit tests
           command: |
-            # Uncomment flake8 when code base has been cleaned
-            pipenv run flake8
-            pipenv run mypy --ignore-missing-imports --strict-optional --incremental .
-            # pipenv run pytest --cov-config .coveragerc --cov=. tests/
-            pipenv run pytest tests/
-            # pipenv run coveralls
+            pipenv run ./runtests
