@@ -8,6 +8,7 @@ greenlet = "==0.4.13"
 
 [dev-packages]
 pytest = "*"
+pytest-cov = {version = ">=2.5.1", index = "pypi"}
 flake8 = "*"
 mypy = "*"
 pudb = "*"

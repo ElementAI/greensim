@@ -33,6 +33,13 @@ def test_schedule_multiple_events():
     assert sim.now() == 10.0
 
 
+def test_schedule_negative():
+    sim = Simulator()
+    ll = []
+    with pytest.raises(ValueError):
+        sim.schedule(-0.5, append, 1, ll)
+
+
 def test_schedule_recurring():
     ll = [0]
 
@@ -145,6 +152,18 @@ def test_process_pause_resume():
     sim.run()
     assert sim.now() == pytest.approx(2.0)
     assert counter == 2
+
+
+def test_getting_current_process():
+    def proc():
+        assert isinstance(Process.current(), Process)
+
+    sim = Simulator()
+    sim.add(proc)
+    sim.run()
+
+    with pytest.raises(TypeError):
+        proc()
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):
