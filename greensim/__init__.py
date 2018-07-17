@@ -77,7 +77,7 @@ class Simulator(object):
         self._counter += 1
         return self
 
-    def add(self, fn_process: Callable, *args, **kwargs) -> 'Simulator':
+    def add(self, fn_process: Callable, *args, **kwargs) -> 'Process':
         """
         Adds a process to the simulation. The process is embodied by a function, which will be called with the given
         positional and keyword parameters when the simulation runs. As a process, this function runs on a special green
