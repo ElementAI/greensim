@@ -340,6 +340,24 @@ class Signal(object):
             self._queue.join()
 
 
+def select(*signals: Signal) -> List[Signal]:
+    """
+    Allows the current process to wait for multiple concurrent signals. Waits until one of the signals turns on, at
+    which point this signal is returned.
+    """
+    def wait_one(signal: Signal, common: Signal) -> None:
+        signal.wait()
+        common.turn_on()
+
+    # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
+    # the others will all run no-op eventually, so no need for any explicit clean-up.
+    common = Signal().turn_off()
+    for signal in signals:
+        add(wait_one, signal, common)
+    common.wait()
+    return [signal for signal in signals if signal.is_on]
+
+
 class Resource(object):
     """
     Resource instances model limited commodities that processes need exclusive access to, and the waiting queue to gain

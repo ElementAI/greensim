@@ -3,7 +3,7 @@ from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Signal, Resource
+from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Signal, select, Resource
 
 
 def test_schedule_none():
@@ -293,6 +293,51 @@ def test_signal_waiter_turning_off():
         sim.schedule(moment, signal.turn_on)
     sim.run()
     assert schedule_signal_on == pytest.approx(log_time)
+
+
+def turn_on(delay: float, signal: Signal) -> None:
+    advance(delay)
+    signal.turn_on()
+
+
+def test_select_one_on():
+    has_passed = False
+
+    def selecter(sigs: List[Signal]):
+        nonlocal has_passed
+        select(*sigs)
+        has_passed = True
+
+    sim = Simulator()
+    signals = [Signal().turn_off() for n in range(5)]
+    sim.add(selecter, signals)
+    sim.run()
+    assert not has_passed
+    signals[3].turn_on()
+    sim.run()
+    assert has_passed
+
+
+def test_select_multiple_turn_on():
+    def selecter(sigs: List[Signal], expected: List[bool]) -> None:
+        signals_on = select(*sigs)
+        for expd, sig in zip(expected, sigs):
+            if expd:
+                assert sig in signals_on
+            else:
+                assert sig not in signals_on
+
+    def enabler(delay: float, sig: Signal) -> None:
+        advance(delay)
+        sig.turn_on()
+
+    sim = Simulator()
+    delays = [4.0, 1.0, 3.0, 1.0, 9.0]
+    signals = [Signal().turn_off() for n in range(5)]
+    for delay, signal in zip(delays, signals):
+        sim.add(enabler, delay, signal)
+    sim.add(selecter, signals, [delay < 2.0 for delay in delays])
+    sim.run()
 
 
 def do_while_holding_resource(delay: float, log: List[float]):
