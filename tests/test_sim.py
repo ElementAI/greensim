@@ -1,8 +1,9 @@
+from itertools import repeat
 from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, Queue, Gate, Resource
+from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Gate, Resource
 
 
 def test_schedule_none():
@@ -178,6 +179,19 @@ def test_process_adding_process():
     sim.add(proc, 1.0)
     sim.run(200.0)
     assert [1.0, 3.0, 7.0, 15.0, 31.0, 63.0, 127.0] == pytest.approx(log)
+
+
+def test_happens():
+    sim = Simulator()
+    log = []
+
+    @happens(repeat(2.0, 5))
+    def process(the_log):
+        the_log.append(now())
+
+    sim.add(process, log)
+    sim.run()
+    assert pytest.approx([2.0, 4.0, 6.0, 8.0, 10.0]) == log
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):

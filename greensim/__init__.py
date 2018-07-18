@@ -203,6 +203,38 @@ def stop() -> None:
     Process.current().sim.stop()
 
 
+def happens(intervals: Iterable[float]) -> Callable:
+    """
+    Decorator used to set up a process that adds a new instance of another process at intervals dictated by the given
+    sequence (which may be infinite).
+
+    Example: the following program runs process named `my_process` 5 times, each time spaced by 2.0 time units.
+
+    ```
+    from itertools import repeat
+
+    sim = Simulator()
+    log = []
+
+    @happens(repeat(2.0, 5))
+    def my_process(the_log):
+        the_log.append(now())
+
+    sim.add(my_process, log)
+    sim.run()
+
+    print(str(log))  # Expect: [2.0, 4.0, 6.0, 8.0, 10.0]
+    ```
+    """
+    def hook(event: Callable):
+        def make_happen(*args_event: Any, **kwargs_event: Any) -> None:
+            for interval in intervals:
+                advance(interval)
+                add(event, *args_event, **kwargs_event)
+        return make_happen
+    return hook
+
+
 class Queue(object):
     """
     Waiting queue for processes, with arbitrary queueing discipline.  Processes `join()` the queue, which pauses them.
