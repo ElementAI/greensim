@@ -3,7 +3,7 @@ from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Gate, Resource
+from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Signal, Resource
 
 
 def test_schedule_none():
@@ -243,56 +243,56 @@ def test_queue_pop_empty():
     assert [1] == log
 
 
-def go_through(gate: Gate, times_cross_expected: List[float], delay_between: float):
-    for expected in times_cross_expected:
+def wait_for(signal: Signal, times_expected: List[float], delay_between: float):
+    for expected in times_expected:
         advance(delay_between)
-        gate.cross()
+        signal.wait()
         assert pytest.approx(expected) == now()
 
 
-def test_gate_already_open():
+def test_signal_already_on():
     sim = Simulator()
-    gate = Gate().open()
-    sim.add(go_through, gate, [1.0], 1.0)
+    signal = Signal().turn_on()
+    sim.add(wait_for, signal, [1.0], 1.0)
     sim.run()
 
 
-def test_gate_wait_open():
+def test_signal_wait_a_while():
     sim = Simulator()
-    gate = Gate().close()
-    sim.add(go_through, gate, [3.0, 4.0], 1.0)
-    sim.schedule(3.0, gate.open)
+    signal = Signal().turn_off()
+    sim.add(wait_for, signal, [3.0, 4.0], 1.0)
+    sim.schedule(3.0, signal.turn_on)
     sim.run()
 
 
-def test_gate_toggling():
+def test_signal_toggling():
     sim = Simulator()
-    gate = Gate().close()
-    sim.add(go_through, gate, [3.0, 4.0, 10.0, 13.0], 1.0)
-    sim.schedule(3.0, gate.open)
-    sim.schedule(4.5, gate.close)
-    sim.schedule(10.0, gate.open)
-    sim.schedule(10.1, gate.close)
-    sim.schedule(13.0, gate.open)
+    signal = Signal().turn_off()
+    sim.add(wait_for, signal, [3.0, 4.0, 10.0, 13.0], 1.0)
+    sim.schedule(3.0, signal.turn_on)
+    sim.schedule(4.5, signal.turn_off)
+    sim.schedule(10.0, signal.turn_on)
+    sim.schedule(10.1, signal.turn_off)
+    sim.schedule(13.0, signal.turn_on)
     sim.run()
 
 
-def test_gate_crosser_closing():
-    def crosser_closing(gate: Gate, log: List[float]):
-        gate.cross()
-        gate.close()
+def test_signal_waiter_turning_off():
+    def waiter_turning_off(signal: Signal, log: List[float]):
+        signal.wait()
+        signal.turn_off()
         log.append(now())
 
     sim = Simulator()
-    gate = Gate().close()
+    signal = Signal().turn_off()
     log_time = []
     for n in range(5):
-        sim.add(crosser_closing, gate, log_time)
-    schedule_gate_open = [4.0, 9.0, 9.1, 200.0, 3000.0]
-    for moment in schedule_gate_open:
-        sim.schedule(moment, gate.open)
+        sim.add(waiter_turning_off, signal, log_time)
+    schedule_signal_on = [4.0, 9.0, 9.1, 200.0, 3000.0]
+    for moment in schedule_signal_on:
+        sim.schedule(moment, signal.turn_on)
     sim.run()
-    assert schedule_gate_open == pytest.approx(log_time)
+    assert schedule_signal_on == pytest.approx(log_time)
 
 
 def do_while_holding_resource(delay: float, log: List[float]):
