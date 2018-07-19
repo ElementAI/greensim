@@ -243,6 +243,20 @@ def test_queue_pop_empty():
     assert [1] == log
 
 
+def test_queue_length():
+    sim = Simulator()
+    queue = Queue()
+    assert 0 == len(queue)
+    log = []
+    for n in range(10):
+        sim.add(queuer, n, queue, log, float(n + 1))
+    sim.run()
+    assert 10 == len(queue)
+    sim.add(dequeueing, queue, 0.0)
+    sim.run()
+    assert 0 == len(queue)
+
+
 def wait_for(signal: Signal, times_expected: List[float], delay_between: float):
     for expected in times_expected:
         advance(delay_between)

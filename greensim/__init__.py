@@ -262,7 +262,14 @@ class Queue(object):
         """
         Returns whether the queue is empty.
         """
-        return len(self._waiting) == 0
+        return len(self) == 0
+
+    def __len__(self) -> int:
+        """
+        Queue length.
+        """
+        return len(self._waiting)
+
 
     def peek(self) -> Process:
         """
