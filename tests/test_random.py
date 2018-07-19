@@ -6,7 +6,7 @@ import pytest
 
 from greensim import Simulator, now, stop
 from greensim.random import constant, linear, bounded, project_int, uniform, expo, normal, poisson_process, \
-    set_default_random, _get_default_random
+    set_default_random, _get_default_random, distribution
 
 
 @pytest.fixture
@@ -96,3 +96,19 @@ def test_poisson_process(rng):
             [0.10255494361223205, 0.07812994293988781, 0.4987172649793017, 0.18531167307385135, 0.1669899041911445],
             [0.0]
         )) == log
+
+
+def test_distribution_dict(rng):
+    check_vr(
+        distribution({"asdf": 5, "qwer": 4, "zxcv": 1}, rng),
+        ["qwer", "qwer", "zxcv", "qwer", "qwer", "asdf", "zxcv", "qwer", "asdf", "asdf"],
+        num=10
+    )
+
+
+def test_distribution_list(rng):
+    check_vr(
+        distribution(["asdf", "qwer", "zxcv"], rng),
+        ["qwer", "qwer", "zxcv", "zxcv", "zxcv", "qwer", "zxcv", "zxcv", "qwer", "qwer"],
+        num=10
+    )

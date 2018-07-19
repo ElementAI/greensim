@@ -1,7 +1,7 @@
 from random import Random
 from itertools import repeat
 from numbers import Real
-from typing import Any, Callable, TypeVar, Optional, Iterator, cast
+from typing import Any, Callable, TypeVar, Optional, Iterator, cast, Iterable, List, Mapping, Union
 
 from greensim import happens
 
@@ -68,3 +68,14 @@ def normal(mean: Real, std_dev: Real, rng: RandomOpt = None) -> VarRandom[float]
 
 def poisson_process(mean_rate: Real, rng: RandomOpt = None) -> Callable[..., Any]:
     return happens(expo(1.0 / mean_rate, rng))
+
+
+def distribution(distr: Union[List[T], Mapping[T, Real]], rng: RandomOpt = None) -> VarRandom[T]:
+    if isinstance(distr, Mapping):
+        vw = list(distr.items())
+        values = [v for v, _ in vw]
+        weights = [w for _, w in vw]
+    else:
+        values = distr
+        weights = [1 for v in values]
+    yield from map(lambda x: x[0], _vr_from_fn(_ordef(rng).choices, values, weights=weights))
