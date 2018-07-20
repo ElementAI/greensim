@@ -66,10 +66,11 @@ def test_tracker_lifecycle():
     tracker = sim.add(track_progress, sim_time, [1000.0], 100.0, capture_pass)
     assert has_tracker(sim, tracker)
 
-    def check_tracker(simm: Simulator):
-        assert has_tracker(simm, tracker)
+    def check_tracker():
+        advance(150)
+        assert has_tracker(sim, tracker)
 
-    sim.schedule(150.0, check_tracker, sim)
+    sim.add(check_tracker)
     sim.run(10000.0)
     assert not has_tracker(sim, tracker)
     assert sim.now() == pytest.approx(1000.0)
@@ -94,11 +95,11 @@ def test_progress_capture():
 
     sim = Simulator()
     sim.add(track_progress, measure, [10, 10], 10.0, capture)
-    sim.schedule(15.0, set_ab, 2, 0)
-    sim.schedule(25.0, set_ab, 4, 1)
-    sim.schedule(35.0, set_ab, 4, 6)
-    sim.schedule(45.0, set_ab, 5, 9)
-    sim.schedule(55.0, set_ab, 10, 10)
+    sim._schedule(15.0, set_ab, 2, 0)
+    sim._schedule(25.0, set_ab, 4, 1)
+    sim._schedule(35.0, set_ab, 4, 6)
+    sim._schedule(45.0, set_ab, 5, 9)
+    sim._schedule(55.0, set_ab, 10, 10)
     sim.run(100.0)
 
     assert sim.now() == pytest.approx(60.0)

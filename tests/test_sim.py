@@ -18,7 +18,7 @@ def append(n, ll):
 def test_schedule_1_event():
     ll = []
     sim = Simulator()
-    sim.schedule(1.0, append, 1, ll)
+    sim._schedule(1.0, append, 1, ll)
     sim.run()
     assert ll == [1]
 
@@ -26,9 +26,9 @@ def test_schedule_1_event():
 def test_schedule_multiple_events():
     ll = []
     sim = Simulator()
-    sim.schedule(1.0, append, 1, ll)
-    sim.schedule(0.7, append, 2, ll)
-    sim.schedule(10.0, append, 3, ll)
+    sim._schedule(1.0, append, 1, ll)
+    sim._schedule(0.7, append, 2, ll)
+    sim._schedule(10.0, append, 3, ll)
     sim.run()
     assert ll == [2, 1, 3]
     assert sim.now() == 10.0
@@ -38,7 +38,7 @@ def test_schedule_negative():
     sim = Simulator()
     ll = []
     with pytest.raises(ValueError):
-        sim.schedule(-0.5, append, 1, ll)
+        sim._schedule(-0.5, append, 1, ll)
 
 
 def test_schedule_recurring():
@@ -47,12 +47,12 @@ def test_schedule_recurring():
     def _append():
         if sim.now() <= 10.0:
             ll.append(ll[-1] + 1)
-            sim.schedule(1.0, _append)
+            sim._schedule(1.0, _append)
         else:
             sim.stop()
 
     sim = Simulator()
-    sim.schedule(1.0, _append)
+    sim._schedule(1.0, _append)
     sim.run()
     assert sim.now() == 11.0
     assert ll == list(range(11))
@@ -123,9 +123,9 @@ def test_schedule_functions():
 
     sim = Simulator()
     results = []
-    sim.schedule(1, f1, sim, results)
-    sim.schedule(2, f2, sim, results)
-    sim.schedule(3, f1, sim, results)
+    sim._schedule(1, f1, sim, results)
+    sim._schedule(2, f2, sim, results)
+    sim._schedule(3, f1, sim, results)
     sim.run()
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == results
 
@@ -275,7 +275,7 @@ def test_signal_wait_a_while():
     sim = Simulator()
     signal = Signal().turn_off()
     sim.add(wait_for, signal, [3.0, 4.0], 1.0)
-    sim.schedule(3.0, signal.turn_on)
+    sim._schedule(3.0, signal.turn_on)
     sim.run()
 
 
@@ -283,11 +283,11 @@ def test_signal_toggling():
     sim = Simulator()
     signal = Signal().turn_off()
     sim.add(wait_for, signal, [3.0, 4.0, 10.0, 13.0], 1.0)
-    sim.schedule(3.0, signal.turn_on)
-    sim.schedule(4.5, signal.turn_off)
-    sim.schedule(10.0, signal.turn_on)
-    sim.schedule(10.1, signal.turn_off)
-    sim.schedule(13.0, signal.turn_on)
+    sim._schedule(3.0, signal.turn_on)
+    sim._schedule(4.5, signal.turn_off)
+    sim._schedule(10.0, signal.turn_on)
+    sim._schedule(10.1, signal.turn_off)
+    sim._schedule(13.0, signal.turn_on)
     sim.run()
 
 
@@ -304,7 +304,7 @@ def test_signal_waiter_turning_off():
         sim.add(waiter_turning_off, signal, log_time)
     schedule_signal_on = [4.0, 9.0, 9.1, 200.0, 3000.0]
     for moment in schedule_signal_on:
-        sim.schedule(moment, signal.turn_on)
+        sim._schedule(moment, signal.turn_on)
     sim.run()
     assert schedule_signal_on == pytest.approx(log_time)
 

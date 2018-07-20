@@ -12,23 +12,23 @@ import greenlet
 
 class Simulator(object):
     """
-    This class articulates the dynamic sequence of events that composes a discrete event system. While single events may
-    be added into a simulation, using method `schedule()`, its use with *processes*, functions that respectively
-    describe trains of events, yields an elegant DSL for modeling discrete event systems. Processes are incorporated
-    into the simulation using method `add()`. This will make the process functions run on green threads (so-called
-    *greenlets*), granting the simulator the possibility of running a large number of concurrent processes. Green thread
-    cooperation is transparent to the simulation's writer: it naturally stems from switching between concurrent events
-    as the simulation progresses. In addition, green threads do not imply the use of Python multi-threading on the
-    simulator's behalf: simulations are run on a single Python thread, and thus data sharing between simulation
-    processes involve no race condition (unless one is explicitly implemented).
+    This class articulates the dynamic sequence of events that composes a discrete event system.  Its use to synchronize
+    and articulate the execution of *processes*, functions that respectively describe trains of events, yields an
+    elegant DSL for modeling discrete event systems. Processes are incorporated into the simulation using method
+    `add()`. This will make the process functions run on green threads (so-called *greenlets*), granting the simulator
+    the possibility of running a large number of concurrent processes. Green thread cooperation is transparent to the
+    simulation's writer: it naturally stems from switching between concurrent events as the simulation progresses. In
+    addition, green threads do not imply the use of Python multi-threading on the simulator's behalf: simulations are
+    run on a single Python thread, and thus data sharing between simulation processes involve no race condition (unless
+    one is explicitly implemented).
 
     Each event within a simulation is associated to a moment on the simulator's clock. This timeline is completely
     abstract: a 1.0 unit on this clock corresponds to whatever unit of time is convenient to the model author (such
     correspondence, when relevant, is best documented for the benefit of the users of the model). When the simulation
     runs, events are executed as fast as a single CPU allows.
 
-    Usage of this class is simple: one sets up events and processes that will generate events as they execute. Then one
-    invokes the run() method. The events are executed in chronological order. Events can schedule new ad hoc events: the
+    Usage of this class is simple: one sets up processes that will generate events as they execute. Then one
+    invokes the run() method. The events are executed in chronological order. Processes can add yet other processes: the
     only rule is that events cannot be scheduled in the past. The simulation stops once all events have been executed,
     or one of the events invokes the stop() method of the Simulator instance; at this moment, method run() returns. It
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
@@ -58,14 +58,17 @@ class Simulator(object):
         """
         return ((moment, event, args, kwargs) for moment, _, event, args, kwargs in self._events)
 
-    def schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> 'Simulator':
+    def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> 'Simulator':
         """
         Schedules a one-time event to be run along the simulation.  The event is scheduled relative to current simulator
         time, so delay is expected to be a positive simulation time interval. The `event' parameter corresponds to a
         callable object (e.g. a function): it will be called so as to "execute" the event, with the positional and
-        keyword parameters that follow `event` in the call to `schedule` (note that the value of these arguments are
-        evaluated when `schedule()` is called, not when the event is executed). Once this event function returns, the
+        keyword parameters that follow `event` in the call to `_schedule()` (note that the value of these arguments are
+        evaluated when `_schedule()` is called, not when the event is executed). Once this event function returns, the
         simulation carries on to the next event, or stops if none remain.
+
+        Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
+        and helper functions of this package.
         """
         delay = float(delay)
         if delay < 0.0:
@@ -85,7 +88,7 @@ class Simulator(object):
         events across the simulated timeline and control the simulation's flow.
         """
         process = Process(self, fn_process, self._gr)
-        self.schedule(0.0, process.switch, *args, **kwargs)
+        self._schedule(0.0, process.switch, *args, **kwargs)
         return process
 
     def run(self, duration: float = inf) -> None:
@@ -96,7 +99,7 @@ class Simulator(object):
         counter_stop_event = None
         if duration != inf:
             counter_stop_event = self._counter
-            self.schedule(duration, self.stop)
+            self._schedule(duration, self.stop)
 
         self._is_running = True
         while self.is_running() and len(self._events) > 0:
@@ -164,7 +167,7 @@ class Process(greenlet.greenlet):
         current process or event: it merely schedules again the target process, so that its execution carries on at the
         return of the `pause()` function, when this new wake-up event fires.
         """
-        self.sim.schedule(0.0, self.switch)
+        self.sim._schedule(0.0, self.switch)
 
 
 def pause() -> None:
@@ -181,7 +184,7 @@ def advance(delay: float) -> None:
     has advanced to the moment corresponding to `now() + delay`.
     """
     curr = Process.current()
-    curr.sim.schedule(delay, curr.switch)
+    curr.sim._schedule(delay, curr.switch)
     curr.sim._switch()
 
 
