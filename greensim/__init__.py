@@ -270,7 +270,6 @@ class Queue(object):
         """
         return len(self._waiting)
 
-
     def peek(self) -> Process:
         """
         Returns the process instance at the top of the queue. This is useful mostly for querying purposes: the

@@ -1,11 +1,10 @@
 import logging
-from random import Random
 from statistics import mean, stdev
-from typing import List, Any
+from typing import Any
 from time import time, localtime, strftime
 
 from greensim import Simulator, Process, advance, add, now, Queue, Signal, Resource
-from greensim.random import constant, project_int, bounded, uniform, expo, normal, distribution, set_default_random
+from greensim.random import constant, project_int, bounded, uniform, expo, normal, distribution
 from greensim.progress import track_progress, sim_time
 
 
@@ -212,7 +211,7 @@ def agent_main_queue():
             traveler_exits_belt.turn_off().wait()
 
         # Assign the least populated suitable belt to the next 5 passengers.
-        belt_best = min(belts_available, key = lambda b: b.num_standing)
+        belt_best = min(belts_available, key=lambda b: b.num_standing)
         for _ in range(NUM_TRAVELERS_PER_BATCH):
             if main_queue.is_empty():
                 break

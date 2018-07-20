@@ -1,7 +1,7 @@
 from random import Random
 from itertools import repeat
 from numbers import Real
-from typing import Any, Callable, TypeVar, Optional, Iterator, cast, Iterable, List, Mapping, Union
+from typing import Any, Callable, TypeVar, Optional, Iterator, cast, List, Mapping, Union
 
 from greensim import happens
 
@@ -77,5 +77,5 @@ def distribution(distr: Union[List[T], Mapping[T, Real]], rng: RandomOpt = None)
         weights = [w for _, w in vw]
     else:
         values = distr
-        weights = [1 for v in values]
-    yield from map(lambda x: x[0], _vr_from_fn(_ordef(rng).choices, values, weights=weights))
+        weights = cast(List[Real], [1.0 for v in values])
+    yield from map(lambda x: cast(T, x[0]), _vr_from_fn(_ordef(rng).choices, values, weights=weights))
