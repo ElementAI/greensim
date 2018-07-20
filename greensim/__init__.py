@@ -135,7 +135,7 @@ class Process(greenlet.greenlet):
     """
     Processes are green threads transparently used to mix the concurrent execution of multiple functions that generate
     trains of events. A simulation's writer typically does not have to care for processes: their management is
-    transparent through the usage of Queues, Gates and Resources. However, if one uses methods pause() to implement a
+    transparent through the usage of Queues, Signals and Resources. However, if one uses methods pause() to implement a
     queueing or interruption mechanism of their own, they become responsible with resuming the stopped processes, by
     invoking their method `resume()`.
 
@@ -262,7 +262,13 @@ class Queue(object):
         """
         Returns whether the queue is empty.
         """
-        return len(self._waiting) == 0
+        return len(self) == 0
+
+    def __len__(self) -> int:
+        """
+        Queue length.
+        """
+        return len(self._waiting)
 
     def peek(self) -> Process:
         """
@@ -292,52 +298,70 @@ class Queue(object):
             process.resume()
 
 
-class Gate(object):
+class Signal(object):
     """
-    `Gate` instances model a kind of *process transistor*. Processes can `cross()` a gate. When they do so, if it is
-    *open*, then they cross instantly. Alternatively, if it is *closed*, the process is made to join a queue. It is
-    popped out of the queue and resumed when the gate is opened at once.
+    `Signal` instances model a condition on which processes can wait. When they do so, if the signal is *on*, their wait
+    ends instantly. Alternatively, if it is *off*, the process is made to join a queue. It is popped out of the queue
+    and resumed when the signal is turned on at once.
     """
 
     def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
         super().__init__()
-        self._is_open = True
+        self._is_on = True
         self._queue = Queue(get_order_token)
 
     @property
-    def is_open(self) -> bool:
+    def is_on(self) -> bool:
         """
-        Tells whether the gate is open.
+        Tells whether the signal is on or off.
         """
-        return self._is_open
+        return self._is_on
 
-    def open(self) -> "Gate":
+    def turn_on(self) -> "Signal":
         """
-        Opens the gate. If processes are waiting, they are all resumed. This may be invoked from any code.
+        Turns on the signal. If processes are waiting, they are all resumed. This may be invoked from any code.
 
         Remark that while processes are simultaneously resumed in simulated time, they are effectively resumed in the
-        sequence corresponding to the queue discipline. Therefore, if one of the resumed processes `close()`s back the
-        gate, remaining resumed processes join back the queue. If the queue discipline is not monotonic (for instance,
-        it bears a random component), then this open-close toggling of the gate may reorder the processes.
+        sequence corresponding to the queue discipline. Therefore, if one of the resumed processes turns the signal back
+        off, remaining resumed processes join back the queue. If the queue discipline is not monotonic (for instance,
+        if it bears a random component), then this toggling of the signal may reorder the processes.
         """
-        self._is_open = True
+        self._is_on = True
         while not self._queue.is_empty():
             self._queue.pop()
         return self
 
-    def close(self) -> "Gate":
+    def turn_off(self) -> "Signal":
         """
-        Closes the gate. This may be invoked from any code.
+        Turns off the signal. This may be invoked from any code.
         """
-        self._is_open = False
+        self._is_on = False
         return self
 
-    def cross(self) -> None:
+    def wait(self) -> None:
         """
-        Gets the current process across the gate. If it is closed, it will join the gate's queue.
+        Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
         """
-        while not self.is_open:
+        while not self.is_on:
             self._queue.join()
+
+
+def select(*signals: Signal) -> List[Signal]:
+    """
+    Allows the current process to wait for multiple concurrent signals. Waits until one of the signals turns on, at
+    which point this signal is returned.
+    """
+    def wait_one(signal: Signal, common: Signal) -> None:
+        signal.wait()
+        common.turn_on()
+
+    # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
+    # the others will all run no-op eventually, so no need for any explicit clean-up.
+    common = Signal().turn_off()
+    for signal in signals:
+        add(wait_one, signal, common)
+    common.wait()
+    return [signal for signal in signals if signal.is_on]
 
 
 class Resource(object):
