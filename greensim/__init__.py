@@ -439,9 +439,9 @@ class Resource(object):
             )
         proc = Process.current()
         if self._num_instances_free < num_instances:
-            proc.local.num_instances = num_instances
+            proc.local.__num_instances_required = num_instances
             self._waiting.join()
-            del proc.local.num_instances
+            del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
@@ -463,7 +463,7 @@ class Resource(object):
                 del self._usage[proc]
             self._num_instances_free += num_instances
             if not self._waiting.is_empty():
-                num_instances_next = cast(int, self._waiting.peek().local.num_instances)
+                num_instances_next = cast(int, self._waiting.peek().local.__num_instances_required)
                 if num_instances_next <= self.num_instances_free:
                     self._waiting.pop()
 
