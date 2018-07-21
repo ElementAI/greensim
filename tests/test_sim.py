@@ -239,7 +239,7 @@ def test_local_replace_hierarchy():
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):
-    Process.current().local["name"] = name
+    local.name = name
     advance(delay)
     queue.join()
     log.append(name)
@@ -268,7 +268,7 @@ def test_queue_join_pop_chrono():
 
 def test_queue_join_pop_evenodd():
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == \
-        run_test_queue_join_pop(Queue(lambda counter: counter + 1000000 * (Process.current().local["name"] % 2)))
+        run_test_queue_join_pop(Queue(lambda counter: counter + 1000000 * (local.name % 2)))
 
 
 def test_queue_pop_empty():

@@ -3,7 +3,7 @@ from statistics import mean, stdev
 from typing import Any
 from time import time, localtime, strftime
 
-from greensim import Simulator, Process, advance, add, now, Queue, Signal, Resource
+from greensim import Simulator, Process, advance, add, now, local, Queue, Signal, Resource
 from greensim.random import constant, project_int, bounded, uniform, expo, normal, distribution
 from greensim.progress import track_progress, sim_time
 
@@ -74,9 +74,9 @@ class LuggageBodyScanner(object):
 
             # Accept the next traveler traversing the checkpoint.
             traveler_next = self._travelers_waiting.peek()
-            debug(f"Agent {name}/{self.num} about to process traveler {traveler_next.local['name']}")
-            traveler_next.local["agent"] = agent
-            traveler_next.local["agent_name"] = f"{name}/{self.num}"
+            debug(f"Agent {name}/{self.num} about to process traveler {traveler_next.local.name}")
+            traveler_next.local.agent = agent
+            traveler_next.local.agent_name = f"{name}/{self.num}"
             self._travelers_waiting.pop()
 
             # Allow the next traveler to "use" this agent, so we may then wait until it's done traversing.
@@ -95,7 +95,7 @@ class LuggageBodyScanner(object):
 
     def traverse(self) -> None:
         # Invoked by crossing passengers in order to get through their luggage and body scan.
-        me = Process.current().local["name"]
+        me = local.name
         if self._num_standing == 0:
             period_empty = now() - self._moment_empty
             self._time_empty += period_empty
@@ -111,9 +111,9 @@ class LuggageBodyScanner(object):
         self._traveler_ready.turn_on()
         self._travelers_waiting.join()
 
-        with Process.current().local["agent"].using():  # Make agent busy with me.
+        with local.agent.using():  # Make agent busy with me.
             # Administer scan or patdown.
-            agent_name = Process.current().local["agent_name"]
+            agent_name = Process.current().local.agent_name
             processing_type = next(traveler_processing_type)
             info(f"Traveler {me} processed by agent {agent_name}: {processing_type}")
             advance(next(traveler_processing_time[processing_type]))
@@ -128,7 +128,7 @@ class LuggageBodyScanner(object):
 
 
 def order_traveler(counter: int) -> int:
-    return counter + Process.current().local["priority"] * 1000000000
+    return counter + local.priority * 1000000000
 
 
 # Simulation setup.
@@ -149,8 +149,8 @@ def traveler():
     traveler_name += 1
     name = traveler_name
 
-    Process.current().local["name"] = name
-    Process.current().local["priority"] = next(traveler_priority)
+    local.name = name
+    local.priority = next(traveler_priority)
     time_arrival = now()
 
     # Kick the agent awake so he gets me a belt.
@@ -159,7 +159,7 @@ def traveler():
     main_queue.join()
 
     # Got a belt -- traverse it.
-    Process.current().local["belt"].traverse()
+    local.belt.traverse()
 
     # Leaving the belt -- kick the agent awake in case this frees up the progress of some passengers stuck in the main
     # queue.
@@ -216,8 +216,8 @@ def agent_main_queue():
             if main_queue.is_empty():
                 break
             traveler_next = main_queue.peek()
-            info(f"MQA ushers traveler {traveler_next.local['name']} towards belt {belt_best.num}")
-            traveler_next.local["belt"] = belt_best
+            info(f"MQA ushers traveler {traveler_next.local.name} towards belt {belt_best.num}")
+            traveler_next.local.belt = belt_best
             main_queue.pop()
 
         # Let travelers walk over to their belt before addressing the next batch.
