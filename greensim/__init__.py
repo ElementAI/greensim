@@ -134,6 +134,30 @@ class Simulator(object):
         self._gr.switch()
 
 
+class _TreeLocalParam(object):
+    """
+    Growing object for which arbitrary attributes can be set and gotten back.
+    """
+
+    def __getattr__(self, name):
+        return self._get().__dict__.setdefault(name, _TreeLocalParam())
+
+    def __setattr__(self, name, value):
+        self._get().__dict__[name] = value
+
+    def _get(self) -> "_TreeLocalParam":
+        return self
+
+
+class _TreeLocalParamCurrent(_TreeLocalParam):
+
+    def _get(self) -> "_TreeLocalParam":
+        return Process.current().local2
+
+
+local = _TreeLocalParamCurrent()
+
+
 class Process(greenlet.greenlet):
     """
     Processes are green threads transparently used to mix the concurrent execution of multiple functions that generate
@@ -150,6 +174,7 @@ class Process(greenlet.greenlet):
         super().__init__(run, parent)
         self.sim = sim
         self.local: MutableMapping[str, Any] = {}
+        self.local2 = _TreeLocalParam()
 
     @staticmethod
     def current() -> 'Process':
