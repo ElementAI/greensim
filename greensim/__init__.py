@@ -269,12 +269,12 @@ def happens(intervals: Iterable[float]) -> Callable:
 
 class Named(object):
 
-    def __init__(self, name: Optional[str]):
+    def __init__(self, name: Optional[str]) -> None:
         super().__init__()
         self._name = name or str(uuid4())
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
 
