@@ -1,4 +1,5 @@
 from itertools import repeat
+import re
 from typing import List, Callable
 
 import pytest
@@ -234,6 +235,14 @@ def test_local_replace_hierarchy():
         assert local.b.a == 7
         assert local.b.b == 8
         assert local.a == 10
+
+    sim_add_run(proc)
+
+
+def test_process_has_default_name():
+    def proc():
+        assert isinstance(local.name, str)
+        assert re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', local.name)
 
     sim_add_run(proc)
 

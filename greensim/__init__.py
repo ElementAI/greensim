@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from heapq import heappush, heappop
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
+from uuid import uuid4
 
 import greenlet
 
@@ -177,6 +178,7 @@ class Process(greenlet.greenlet):
         super().__init__(run, parent)
         self.sim = sim
         self.local = _TreeLocalParam()
+        self.local.name = str(uuid4())
 
     @staticmethod
     def current() -> 'Process':
