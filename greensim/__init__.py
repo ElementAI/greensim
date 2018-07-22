@@ -267,7 +267,18 @@ def happens(intervals: Iterable[float]) -> Callable:
     return hook
 
 
-class Queue(object):
+class Named(object):
+
+    def __init__(self, name: Optional[str]) -> None:
+        super().__init__()
+        self._name = name or str(uuid4())
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+
+class Queue(Named):
     """
     Waiting queue for processes, with arbitrary queueing discipline.  Processes `join()` the queue, which pauses them.
     It is assumed that other events of the process result in invoking the queue's `pop()` method, which takes the top
@@ -284,8 +295,8 @@ class Queue(object):
 
     GetOrderToken = Callable[[int], int]
 
-    def __init__(self, get_order_token: Optional[GetOrderToken] = None) -> None:
-        super().__init__()
+    def __init__(self, get_order_token: Optional[GetOrderToken] = None, name: Optional[str] = None) -> None:
+        super().__init__(name)
         self._waiting: List[Tuple[int, Process]] = []
         self._counter = 0
         self._get_order_token = get_order_token or (lambda counter: counter)
@@ -330,15 +341,15 @@ class Queue(object):
             process.resume()
 
 
-class Signal(object):
+class Signal(Named):
     """
     `Signal` instances model a condition on which processes can wait. When they do so, if the signal is *on*, their wait
     ends instantly. Alternatively, if it is *off*, the process is made to join a queue. It is popped out of the queue
     and resumed when the signal is turned on at once.
     """
 
-    def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
-        super().__init__()
+    def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None, name: Optional[str] = None) -> None:
+        super().__init__(name)
         self._is_on = True
         self._queue = Queue(get_order_token)
 
@@ -396,7 +407,7 @@ def select(*signals: Signal) -> List[Signal]:
     return [signal for signal in signals if signal.is_on]
 
 
-class Resource(object):
+class Resource(Named):
     """
     Resource instances model limited commodities that processes need exclusive access to, and the waiting queue to gain
     access. A resource is built with a number of available *instances*, and any process can `take()` a certain number of
@@ -411,8 +422,13 @@ class Resource(object):
     instances they need from each resource respectively is reserved atomically, i.e. in a single call to `take()`.
     """
 
-    def __init__(self, num_instances: int = 1, get_order_token: Optional[Queue.GetOrderToken] = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        num_instances: int = 1,
+        get_order_token: Optional[Queue.GetOrderToken] = None,
+        name: Optional[str] = None
+    ) -> None:
+        super().__init__(name)
         self._num_instances_free = num_instances
         self._waiting = Queue(get_order_token)
         self._usage: Dict[Process, int] = {}
