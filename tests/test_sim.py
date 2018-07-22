@@ -1,9 +1,10 @@
 from itertools import repeat
+import re
 from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, happens, Queue, Signal, select, Resource
+from greensim import Simulator, Process, now, advance, pause, add, happens, local, Queue, Signal, select, Resource
 
 
 def test_schedule_none():
@@ -194,8 +195,60 @@ def test_happens():
     assert pytest.approx([2.0, 4.0, 6.0, 8.0, 10.0]) == log
 
 
+def sim_add_run(proc: Callable) -> None:
+    sim = Simulator()
+    sim.add(proc)
+    sim.run()
+
+
+def test_local_set_get():
+    def fn():
+        assert local.param == "asdf"
+        assert local.parent.child == "qwer"
+
+    def proc():
+        local.param = "asdf"
+        local.parent.child = "qwer"
+        fn()
+
+    sim_add_run(proc)
+
+
+def test_local_get_unknown():
+    def proc():
+        assert local.unknown is not None
+        local.unknown = 5
+        assert local.unknown == 5
+
+    sim_add_run(proc)
+
+
+def test_local_replace_hierarchy():
+    def proc():
+        local.a.a = 5
+        local.a.b = 6
+        local.b.a = 7
+        local.b.b = 8
+        local.a = 10
+        with pytest.raises(AttributeError):
+            assert local.a.a == 5
+        assert local.b.a == 7
+        assert local.b.b == 8
+        assert local.a == 10
+
+    sim_add_run(proc)
+
+
+def test_process_has_default_name():
+    def proc():
+        assert isinstance(local.name, str)
+        assert re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', local.name)
+
+    sim_add_run(proc)
+
+
 def queuer(name: int, queue: Queue, log: List[int], delay: float):
-    Process.current().local["name"] = name
+    local.name = name
     advance(delay)
     queue.join()
     log.append(name)
@@ -224,7 +277,7 @@ def test_queue_join_pop_chrono():
 
 def test_queue_join_pop_evenodd():
     assert [2 * n for n in range(5)] + [2 * n + 1 for n in range(5)] == \
-        run_test_queue_join_pop(Queue(lambda counter: counter + 1000000 * (Process.current().local["name"] % 2)))
+        run_test_queue_join_pop(Queue(lambda counter: counter + 1000000 * (local.name % 2)))
 
 
 def test_queue_pop_empty():

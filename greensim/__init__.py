@@ -5,7 +5,8 @@ Core tools for building simulations.
 from contextlib import contextmanager
 from heapq import heappush, heappop
 from math import inf
-from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, MutableMapping, Any
+from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
+from uuid import uuid4
 
 import greenlet
 
@@ -134,6 +135,33 @@ class Simulator(object):
         self._gr.switch()
 
 
+class _TreeLocalParam(object):
+    """
+    Growing object for which arbitrary attributes can be set and gotten back.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return self._get().__dict__.setdefault(name, _TreeLocalParam())
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self._get().__dict__[name] = value
+
+    def __delattr__(self, name: str) -> None:
+        del self._get().__dict__[name]
+
+    def _get(self) -> "_TreeLocalParam":
+        return self
+
+
+class _TreeLocalParamCurrent(_TreeLocalParam):
+
+    def _get(self) -> "_TreeLocalParam":
+        return Process.current().local
+
+
+local = _TreeLocalParamCurrent()
+
+
 class Process(greenlet.greenlet):
     """
     Processes are green threads transparently used to mix the concurrent execution of multiple functions that generate
@@ -149,7 +177,8 @@ class Process(greenlet.greenlet):
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         super().__init__(run, parent)
         self.sim = sim
-        self.local: MutableMapping[str, Any] = {}
+        self.local = _TreeLocalParam()
+        self.local.name = str(uuid4())
 
     @staticmethod
     def current() -> 'Process':
@@ -412,9 +441,9 @@ class Resource(object):
             )
         proc = Process.current()
         if self._num_instances_free < num_instances:
-            proc.local["num_instances"] = num_instances
+            proc.local.__num_instances_required = num_instances
             self._waiting.join()
-            del proc.local["num_instances"]
+            del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
@@ -436,7 +465,7 @@ class Resource(object):
                 del self._usage[proc]
             self._num_instances_free += num_instances
             if not self._waiting.is_empty():
-                num_instances_next = cast(int, self._waiting.peek().local["num_instances"])
+                num_instances_next = cast(int, self._waiting.peek().local.__num_instances_required)
                 if num_instances_next <= self.num_instances_free:
                     self._waiting.pop()
 
