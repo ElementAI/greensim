@@ -10,13 +10,13 @@ class Filter(logging.Filter):
     within processes.
     """
 
-    def filter(self, record: logging.LogRecord) -> None:
+    def filter(self, record: logging.LogRecord) -> int:
         try:
             sim_time = now()
             sim_process = local.name
         except TypeError:
-            sim_time = None
-            sim_process = None
+            sim_time = -1.0
+            sim_process = ""
 
         for attr, value in [
             ("sim_time", sim_time),
@@ -25,4 +25,4 @@ class Filter(logging.Filter):
             if not hasattr(record, attr):
                 setattr(record, attr, value)
 
-        return record
+        return 1

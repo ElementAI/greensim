@@ -46,7 +46,7 @@ def test_sanity_logging(logger):
     logger.error("d")
     logger.critical("e")
     assert [
-        (level, None, None, msg)
+        (level, -1.0, "", msg)
         for level, msg in [
             (logging.DEBUG, "a"),
             (logging.INFO, "b"),
