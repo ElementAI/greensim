@@ -4,7 +4,8 @@ from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, happens, local, Queue, Signal, select, Resource
+from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
+    Resource
 
 
 def test_schedule_none():
@@ -239,12 +240,25 @@ def test_local_replace_hierarchy():
     sim_add_run(proc)
 
 
+def is_uuid(s: str) -> bool:
+    return re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', s)
+
+
 def test_process_has_default_name():
     def proc():
         assert isinstance(local.name, str)
-        assert re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', local.name)
+        assert is_uuid(local.name)
 
     sim_add_run(proc)
+
+
+def test_named_default_name():
+    assert(is_uuid(Named(None).name))
+
+
+def test_named_set_name():
+    named = Named("asdf")
+    assert named.name == "asdf"
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):
