@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from greensim import Simulator, local, advance, pause, Queue, Signal, Resource
+from greensim import Simulator, advance, pause, Queue, Signal, Resource
 from greensim.logging import Filter
 
 

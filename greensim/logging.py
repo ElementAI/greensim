@@ -1,5 +1,4 @@
 import logging
-from typing import Any, Callable
 
 from greensim import now, local
 
