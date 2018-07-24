@@ -1,7 +1,6 @@
 from io import StringIO
 import itertools
 from math import inf
-import time
 from unittest.mock import Mock, patch
 
 import pytest
