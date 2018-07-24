@@ -184,8 +184,11 @@ class Simulator(Named):
         """
         Stops the running simulation once the current event is done executing.
         """
-        self._is_running = False
+        if self.is_running:
+            self._log(INFO, "stop", __now=self.now())
+            self._is_running = False
 
+    @property
     def is_running(self) -> bool:
         """
         Tells whether the simulation is currently running.
