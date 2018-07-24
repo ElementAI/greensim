@@ -216,5 +216,60 @@ def test_auto_log_queue(auto_logger):
         q.join()
         advance(100)
 
-def test_auto_log_change_level():
+    sim = Simulator()
+    queue = Queue(name="the-queue")
+    sim.add(proc, queue)
+    sim.run()
+    queue.pop()
+    sim.run(10)
+
+    check_log(
+        auto_logger,
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "add", dict(fn=proc, args=(queue,), kwargs={})),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=inf)),
+        (logging.INFO, 0.0, "the-process", "Queue", "the-queue", "join", {}),
+        (logging.INFO, 0.0, "the-process", "Process", "the-process", "pause", {}),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "stop", {}),
+        (logging.INFO, -1.0, "", "Queue", "the-queue", "pop", dict(process="the-process")),
+        (logging.INFO, -1.0, "", "Process", "the-process", "resume", {}),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=10.0)),
+        (logging.INFO, 0.0, "the-process", "Process", "the-process", "advance", dict(delay=100.0)),
+        (logging.INFO, 10.0, "", "Simulator", sim.name, "stop", {})
+    )
+
+
+def test_auto_log_signal(auto_logger):
+    def proc(sig):
+        local.name = "the-process"
+        sig.wait()
+        advance(10)
+        sig.wait()
+
+    sim = Simulator()
+    signal = Signal(name="the-signal").turn_off()
+    sim.add(proc, signal)
+    sim.run()
+    signal.turn_on()
+    sim.run()
+
+    check_log(
+        auto_logger,
+        (logging.INFO, -1.0, "", "Signal", "the-signal", "turn-off", {}),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "add", dict(fn=proc, args=(signal,), kwargs={})),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=inf)),
+        (logging.INFO, 0.0, "the-process", "Signal", "the-signal", "wait", {}),
+        (logging.INFO, 0.0, "the-process", "Queue", "the-signal-queue", "join", {}),
+        (logging.INFO, 0.0, "the-process", "Process", "the-process", "pause", {}),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "stop", {}),
+        (logging.INFO, -1.0, "", "Signal", "the-signal", "turn-on", {}),
+        (logging.INFO, -1.0, "", "Queue", "the-signal-queue", "pop", dict(process="the-process")),
+        (logging.INFO, -1.0, "", "Process", "the-process", "resume", {}),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=inf)),
+        (logging.INFO, 0.0, "the-process", "Process", "the-process", "advance", dict(delay=10.0)),
+        (logging.INFO, 10.0, "the-process", "Signal", "the-signal", "wait", {}),
+        (logging.INFO, 10.0, "", "Simulator", sim.name, "stop", {})
+    )
+
+
+def test_auto_log_resource():
     pytest.fail()

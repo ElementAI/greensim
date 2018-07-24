@@ -394,6 +394,7 @@ class Queue(Named):
         queue so that the process can eventually leave the queue and carry on with its execution.
         """
         self._counter += 1
+        self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
         pause()
 
@@ -404,6 +405,7 @@ class Queue(Named):
         """
         if not self.is_empty():
             _, process = heappop(self._waiting)
+            self._log(INFO, "pop", process = process.local.name)
             process.resume()
 
 
@@ -417,7 +419,7 @@ class Signal(Named):
     def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None, name: Optional[str] = None) -> None:
         super().__init__(name)
         self._is_on = True
-        self._queue = Queue(get_order_token)
+        self._queue = Queue(get_order_token, name=self.name + "-queue")
 
     @property
     def is_on(self) -> bool:
@@ -435,6 +437,7 @@ class Signal(Named):
         off, remaining resumed processes join back the queue. If the queue discipline is not monotonic (for instance,
         if it bears a random component), then this toggling of the signal may reorder the processes.
         """
+        self._log(INFO, "turn-on")
         self._is_on = True
         while not self._queue.is_empty():
             self._queue.pop()
@@ -444,6 +447,7 @@ class Signal(Named):
         """
         Turns off the signal. This may be invoked from any code.
         """
+        self._log(INFO, "turn-off")
         self._is_on = False
         return self
 
@@ -451,6 +455,7 @@ class Signal(Named):
         """
         Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
         """
+        self._log(INFO, "wait")
         while not self.is_on:
             self._queue.join()
 
@@ -466,7 +471,8 @@ def select(*signals: Signal) -> List[Signal]:
 
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
-    common = Signal().turn_off()
+    common = Signal(name=local.name + "-selector").turn_off()
+    _log(INFO, "select", "select", "select", signals = [sig.name for sig in signals])
     for signal in signals:
         add(wait_one, signal, common)
     common.wait()
