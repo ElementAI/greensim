@@ -4,6 +4,7 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from heapq import heappush, heappop
+from logging import getLogger, DEBUG, INFO, WARNING, CRITICAL, NullHandler
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
 from uuid import uuid4
@@ -11,7 +12,52 @@ from uuid import uuid4
 import greenlet
 
 
-class Simulator(object):
+# Disable logging by default. Set a proper handler and level to enable logging.
+logger = getLogger(__name__)
+logger.setLevel(CRITICAL + 1)
+logger.addHandler(NullHandler())
+
+
+def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
+    try:
+        ts_now = now()
+        name_process = local.name
+    except TypeError:
+        ts_now = params.get("__now", -1.0)
+        name_process = ""
+
+    if "__now" in params:
+        del params["__now"]
+
+    logger.log(
+        level,
+        "",
+        extra=dict(
+            sim_time=ts_now,
+            sim_process=name_process,
+            sim_name=name,
+            sim_object=obj,
+            sim_event=event,
+            sim_params=params
+        )
+    )
+
+
+class Named(object):
+
+    def __init__(self, name: Optional[str]) -> None:
+        super().__init__()
+        self._name = name or str(uuid4())
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def _log(self, level: int, event: str, **params: Any) -> None:
+        _log(level, type(self).__name__, self.name, event, **params)
+
+
+class Simulator(Named):
     """
     This class articulates the dynamic sequence of events that composes a discrete event system.  Its use to synchronize
     and articulate the execution of *processes*, functions that respectively describe trains of events, yields an
@@ -35,10 +81,11 @@ class Simulator(object):
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
     """
 
-    def __init__(self, ts_now: float = 0.0) -> None:
+    def __init__(self, ts_now: float = 0.0, name: Optional[str] = None) -> None:
         """
         Constructor. Parameter ts_now can be set to the initial value of the simulator's clock; it defaults at 0.0.
         """
+        super().__init__(name)
         self._ts_now = ts_now
         self._events: List[Tuple[float, int, Callable, Tuple, Dict]] = []
         self._is_running = False
@@ -71,6 +118,16 @@ class Simulator(object):
         Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
         and helper functions of this package.
         """
+        self._log(
+            DEBUG,
+            "schedule",
+            delay=delay,
+            fn=event,
+            args=args,
+            kwargs=kwargs,
+            counter=self._counter,
+            __now=self.now()
+        )
         delay = float(delay)
         if delay < 0.0:
             raise ValueError("Delay must be positive.")
@@ -89,6 +146,7 @@ class Simulator(object):
         events across the simulated timeline and control the simulation's flow.
         """
         process = Process(self, fn_process, self._gr)
+        self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
         self._schedule(0.0, process.switch, *args, **kwargs)
         return process
 
@@ -97,15 +155,19 @@ class Simulator(object):
         Runs the simulation until a stopping condition is met (no more events, or an event invokes method stop()), or
         until the simulated clock hits the given duration.
         """
+        self._log(INFO, "run", __now=self.now(), duration=duration)
         counter_stop_event = None
         if duration != inf:
             counter_stop_event = self._counter
             self._schedule(duration, self.stop)
 
         self._is_running = True
-        while self.is_running() and len(self._events) > 0:
-            self._ts_now, _, event, args, kwargs = heappop(self._events)
+        while self.is_running and len(self._events) > 0:
+            self._ts_now, cnt, event, args, kwargs = heappop(self._events)
+            self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
             event(*args, **kwargs)
+        if len(self._events) == 0:
+            self._log(DEBUG, "out-of-events", __now=self.now())
         self.stop()
 
         if counter_stop_event is not None:
@@ -113,6 +175,7 @@ class Simulator(object):
             # event queue.
             for (i, (moment, counter, _, _, _)) in enumerate(self._events):
                 if counter == counter_stop_event:
+                    self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
 
@@ -120,8 +183,11 @@ class Simulator(object):
         """
         Stops the running simulation once the current event is done executing.
         """
-        self._is_running = False
+        if self.is_running:
+            self._log(INFO, "stop", __now=self.now())
+            self._is_running = False
 
+    @property
     def is_running(self) -> bool:
         """
         Tells whether the simulation is currently running.
@@ -157,6 +223,11 @@ class _TreeLocalParamCurrent(_TreeLocalParam):
 
     def _get(self) -> "_TreeLocalParam":
         return Process.current().local
+
+    def __setattr__(self, name: str, value: Any) -> Any:
+        if name == "name":
+            _log(DEBUG, "Process", self.name, "rename", new=value)
+        super().__setattr__(name, value)
 
 
 local = _TreeLocalParamCurrent()
@@ -196,6 +267,7 @@ class Process(greenlet.greenlet):
         current process or event: it merely schedules again the target process, so that its execution carries on at the
         return of the `pause()` function, when this new wake-up event fires.
         """
+        _log(INFO, "Process", self.local.name, "resume")
         self.sim._schedule(0.0, self.switch)
 
 
@@ -204,6 +276,7 @@ def pause() -> None:
     Pauses the current process indefinitely -- it will require another process to `resume()` it. When this resumption
     happens, the process returns from this function.
     """
+    _log(INFO, "Process", local.name, "pause")
     Process.current().sim._switch()
 
 
@@ -212,6 +285,7 @@ def advance(delay: float) -> None:
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
+    _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     curr.sim._schedule(delay, curr.switch)
     curr.sim._switch()
@@ -235,7 +309,7 @@ def stop() -> None:
     Process.current().sim.stop()
 
 
-def happens(intervals: Iterable[float]) -> Callable:
+def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     """
     Decorator used to set up a process that adds a new instance of another process at intervals dictated by the given
     sequence (which may be infinite).
@@ -260,22 +334,13 @@ def happens(intervals: Iterable[float]) -> Callable:
     """
     def hook(event: Callable):
         def make_happen(*args_event: Any, **kwargs_event: Any) -> None:
+            if name is not None:
+                local.name = cast(str, name)
             for interval in intervals:
                 advance(interval)
                 add(event, *args_event, **kwargs_event)
         return make_happen
     return hook
-
-
-class Named(object):
-
-    def __init__(self, name: Optional[str]) -> None:
-        super().__init__()
-        self._name = name or str(uuid4())
-
-    @property
-    def name(self) -> str:
-        return self._name
 
 
 class Queue(Named):
@@ -328,6 +393,7 @@ class Queue(Named):
         queue so that the process can eventually leave the queue and carry on with its execution.
         """
         self._counter += 1
+        self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
         pause()
 
@@ -338,6 +404,7 @@ class Queue(Named):
         """
         if not self.is_empty():
             _, process = heappop(self._waiting)
+            self._log(INFO, "pop", process=process.local.name)
             process.resume()
 
 
@@ -351,7 +418,7 @@ class Signal(Named):
     def __init__(self, get_order_token: Optional[Queue.GetOrderToken] = None, name: Optional[str] = None) -> None:
         super().__init__(name)
         self._is_on = True
-        self._queue = Queue(get_order_token)
+        self._queue = Queue(get_order_token, name=self.name + "-queue")
 
     @property
     def is_on(self) -> bool:
@@ -369,6 +436,7 @@ class Signal(Named):
         off, remaining resumed processes join back the queue. If the queue discipline is not monotonic (for instance,
         if it bears a random component), then this toggling of the signal may reorder the processes.
         """
+        self._log(INFO, "turn-on")
         self._is_on = True
         while not self._queue.is_empty():
             self._queue.pop()
@@ -378,6 +446,7 @@ class Signal(Named):
         """
         Turns off the signal. This may be invoked from any code.
         """
+        self._log(INFO, "turn-off")
         self._is_on = False
         return self
 
@@ -385,6 +454,7 @@ class Signal(Named):
         """
         Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
         """
+        self._log(INFO, "wait")
         while not self.is_on:
             self._queue.join()
 
@@ -400,7 +470,8 @@ def select(*signals: Signal) -> List[Signal]:
 
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
-    common = Signal().turn_off()
+    common = Signal(name=local.name + "-selector").turn_off()
+    _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
     for signal in signals:
         add(wait_one, signal, common)
     common.wait()
@@ -430,7 +501,7 @@ class Resource(Named):
     ) -> None:
         super().__init__(name)
         self._num_instances_free = num_instances
-        self._waiting = Queue(get_order_token)
+        self._waiting = Queue(get_order_token, name=self.name + "-queue")
         self._usage: Dict[Process, int] = {}
 
     @property
@@ -455,12 +526,15 @@ class Resource(Named):
             raise ValueError(
                 f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
             )
+        self._log(INFO, "take", num_instances=num_instances, free=self.num_instances_free)
         proc = Process.current()
         if self._num_instances_free < num_instances:
             proc.local.__num_instances_required = num_instances
             self._waiting.join()
             del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
+        if proc in self._usage:
+            self._log(WARNING, "take-again", already=self._usage[proc], more=num_instances)
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
 
@@ -474,16 +548,32 @@ class Resource(Named):
         if self._usage.get(proc, 0) > 0:
             if num_instances > self._usage[proc]:
                 raise ValueError(
-                    f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
+                    f"Process {proc.local.name} holds {self._usage[proc]} instances, " +
+                    f"but requests to release more ({num_instances})"
                 )
             self._usage[proc] -= num_instances
+            self._num_instances_free += num_instances
+            self._log(
+                INFO,
+                "release",
+                num_instances=num_instances,
+                keeping=self._usage[proc],
+                free=self.num_instances_free
+            )
             if self._usage[proc] <= 0:
                 del self._usage[proc]
-            self._num_instances_free += num_instances
             if not self._waiting.is_empty():
                 num_instances_next = cast(int, self._waiting.peek().local.__num_instances_required)
                 if num_instances_next <= self.num_instances_free:
                     self._waiting.pop()
+                else:
+                    self._log(DEBUG, "release-nopop", next_requires=num_instances_next, free=self.num_instances_free)
+            else:
+                self._log(DEBUG, "release-queueempty")
+        else:
+            raise RuntimeError(
+                f"Process {proc.local.name} tries to release {num_instances} instances, but is holding none.)"
+            )
 
     @contextmanager
     def using(self, num_instances: int = 1):

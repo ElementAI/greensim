@@ -4,7 +4,8 @@ from typing import List, Callable
 
 import pytest
 
-from greensim import Simulator, Process, now, advance, pause, add, happens, local, Queue, Signal, select, Resource
+from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
+    Resource
 
 
 def test_schedule_none():
@@ -110,7 +111,7 @@ def test_interleaved_sequence():
     sim.run()
     assert [(0.0, 'p1', 0), (2.0, 'p1', 1), (4.0, 'p1', 2), (6.0, 'p1', 3), (8.0, 'p1', 4)] == results_p1
     assert [(1.0, 'p2', 0), (3.0, 'p2', 1), (5.0, 'p2', 2), (7.0, 'p2', 3), (9.0, 'p2', 4)] == results_p2
-    assert not sim.is_running()
+    assert not sim.is_running
 
 
 def test_schedule_functions():
@@ -195,6 +196,18 @@ def test_happens():
     assert pytest.approx([2.0, 4.0, 6.0, 8.0, 10.0]) == log
 
 
+def test_happens_named():
+    @happens([5], name="my-process")
+    def process():
+        advance(5)
+
+    sim = Simulator()
+    proc = sim.add(process)
+    sim.run()
+    assert proc.local.name == "my-process"
+    assert 10.0 == pytest.approx(sim.now())
+
+
 def sim_add_run(proc: Callable) -> None:
     sim = Simulator()
     sim.add(proc)
@@ -239,12 +252,25 @@ def test_local_replace_hierarchy():
     sim_add_run(proc)
 
 
+def is_uuid(s: str) -> bool:
+    return re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', s) is not None
+
+
 def test_process_has_default_name():
     def proc():
         assert isinstance(local.name, str)
-        assert re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', local.name)
+        assert is_uuid(local.name)
 
     sim_add_run(proc)
+
+
+def test_named_default_name():
+    assert(is_uuid(Named(None).name))
+
+
+def test_named_set_name():
+    named = Named("asdf")
+    assert named.name == "asdf"
 
 
 def queuer(name: int, queue: Queue, log: List[int], delay: float):
@@ -485,3 +511,15 @@ def test_resource_take_more_than_max():
 def test_resource_release_more_than_take():
     run_resource_test_incoherent(1, 2)
     run_resource_test_incoherent(3, 5)
+
+
+def test_resource_release_while_holding_none():
+    def proc(resource: Resource) -> None:
+        resource.release()
+        pytest.fail()
+
+    sim = Simulator()
+    resource = Resource(1)
+    sim.add(proc, resource)
+    with pytest.raises(RuntimeError):
+        sim.run()
