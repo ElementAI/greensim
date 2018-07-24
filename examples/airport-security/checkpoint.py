@@ -1,11 +1,20 @@
-import logging
+from logging import debug, info, getLogger, basicConfig, INFO
 from statistics import mean, stdev
-from typing import Any
 from time import time, localtime, strftime
 
 from greensim import Simulator, Process, advance, add, now, local, Queue, Signal, Resource
+import greensim.logging as gs_logging
 from greensim.random import constant, project_int, bounded, uniform, expo, normal, distribution
 from greensim.progress import track_progress, sim_time
+
+
+logger_root = getLogger()
+logger_root.addFilter(gs_logging.Filter())
+basicConfig(
+    filename=strftime("checkpoint_%Y-%m-%d_%H-%M-%S.log", localtime(time())),
+    format="%(levelname)5s | %(sim_time)12.1f -- %(message)s",
+    level=INFO
+)
 
 
 # Time convention: 1.0 == 1 minute
@@ -226,26 +235,6 @@ def agent_main_queue():
 
 sim.add(agent_main_queue)
 
-
-def log(level: int, msg: str, *args: Any, **kwargs: Any):
-    kwargs.setdefault("extra", {})["sim_time"] = sim.now()
-    logging.log(level, msg, *args, **kwargs)
-
-
-def debug(msg: str, *args: Any, **kwargs: Any):
-    log(logging.DEBUG, msg, *args, **kwargs)
-
-
-def info(msg: str, *args: Any, **kwargs: Any):
-    log(logging.INFO, msg, *args, **kwargs)
-
-
-# Set up logging.
-logging.basicConfig(
-    filename=strftime("checkpoint_%Y-%m-%d_%H-%M-%S.log", localtime(time())),
-    format="%(sim_time)12.1f -- %(message)s",
-    level=logging.INFO
-)
 
 # Run the simulation.
 sim.add(track_progress, sim_time, [PERIOD], 1.0 * HOUR)
