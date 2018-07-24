@@ -4,6 +4,8 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from heapq import heappush, heappop
+from logging import getLogger, DEBUG, INFO, WARNING, ERROR, CRITICAL, NullHandler
+# from logging.handlers import NullHandler
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
 from uuid import uuid4
@@ -11,7 +13,52 @@ from uuid import uuid4
 import greenlet
 
 
-class Simulator(object):
+# Disable logging by default. Set a proper handler and level to enable logging.
+logger = getLogger(__name__)
+logger.setLevel(CRITICAL + 1)
+logger.addHandler(NullHandler())
+
+
+def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
+    try:
+        ts_now = now()
+        name_process = local.name
+    except TypeError:
+        ts_now = params.get("__now", -1.0)
+        name_process = ""
+
+    if "__now" in params:
+        del params["__now"]
+
+    logger.log(
+        level,
+        "",
+        extra=dict(
+            sim_time = ts_now,
+            sim_process = name_process,
+            sim_name = name,
+            sim_object = obj,
+            sim_event = event,
+            sim_params = params
+        )
+    )
+
+
+class Named(object):
+
+    def __init__(self, name: Optional[str]) -> None:
+        super().__init__()
+        self._name = name or str(uuid4())
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    def _log(self, level: int, event: str, **params: Any) -> None:
+        _log(level, type(self).__name__, self.name, event, **params)
+
+
+class Simulator(Named):
     """
     This class articulates the dynamic sequence of events that composes a discrete event system.  Its use to synchronize
     and articulate the execution of *processes*, functions that respectively describe trains of events, yields an
@@ -35,10 +82,11 @@ class Simulator(object):
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
     """
 
-    def __init__(self, ts_now: float = 0.0) -> None:
+    def __init__(self, ts_now: float = 0.0, name: Optional[str] = None) -> None:
         """
         Constructor. Parameter ts_now can be set to the initial value of the simulator's clock; it defaults at 0.0.
         """
+        super().__init__(name)
         self._ts_now = ts_now
         self._events: List[Tuple[float, int, Callable, Tuple, Dict]] = []
         self._is_running = False
@@ -71,6 +119,16 @@ class Simulator(object):
         Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
         and helper functions of this package.
         """
+        self._log(
+            DEBUG,
+            "schedule",
+            delay=delay,
+            fn=event,
+            args=args,
+            kwargs=kwargs,
+            counter=self._counter,
+            __now=self.now()
+        )
         delay = float(delay)
         if delay < 0.0:
             raise ValueError("Delay must be positive.")
@@ -89,6 +147,7 @@ class Simulator(object):
         events across the simulated timeline and control the simulation's flow.
         """
         process = Process(self, fn_process, self._gr)
+        self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
         self._schedule(0.0, process.switch, *args, **kwargs)
         return process
 
@@ -97,15 +156,19 @@ class Simulator(object):
         Runs the simulation until a stopping condition is met (no more events, or an event invokes method stop()), or
         until the simulated clock hits the given duration.
         """
+        self._log(INFO, "run", __now=self.now(), duration=duration)
         counter_stop_event = None
         if duration != inf:
             counter_stop_event = self._counter
             self._schedule(duration, self.stop)
 
         self._is_running = True
-        while self.is_running() and len(self._events) > 0:
-            self._ts_now, _, event, args, kwargs = heappop(self._events)
+        while self.is_running and len(self._events) > 0:
+            self._ts_now, cnt, event, args, kwargs = heappop(self._events)
+            self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
             event(*args, **kwargs)
+        if len(self._events) == 0:
+            self._log(DEBUG, "out-of-events", __now=self.now())
         self.stop()
 
         if counter_stop_event is not None:
@@ -113,6 +176,7 @@ class Simulator(object):
             # event queue.
             for (i, (moment, counter, _, _, _)) in enumerate(self._events):
                 if counter == counter_stop_event:
+                    self._log(DEBUG, "cancel-stop", counter = counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
 
@@ -158,6 +222,11 @@ class _TreeLocalParamCurrent(_TreeLocalParam):
     def _get(self) -> "_TreeLocalParam":
         return Process.current().local
 
+    def __setattr__(self, name: str, value: Any) -> Any:
+        if name == "name":
+            _log(DEBUG, "Process", self.name, "rename", new = value)
+        super().__setattr__(name, value)
+
 
 local = _TreeLocalParamCurrent()
 
@@ -196,6 +265,7 @@ class Process(greenlet.greenlet):
         current process or event: it merely schedules again the target process, so that its execution carries on at the
         return of the `pause()` function, when this new wake-up event fires.
         """
+        _log(INFO, "Process", self.local.name, "resume")
         self.sim._schedule(0.0, self.switch)
 
 
@@ -204,6 +274,7 @@ def pause() -> None:
     Pauses the current process indefinitely -- it will require another process to `resume()` it. When this resumption
     happens, the process returns from this function.
     """
+    _log(INFO, "Process", local.name, "pause")
     Process.current().sim._switch()
 
 
@@ -212,6 +283,7 @@ def advance(delay: float) -> None:
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
+    _log(INFO, "Process", local.name, "advance", delay = delay)
     curr = Process.current()
     curr.sim._schedule(delay, curr.switch)
     curr.sim._switch()
@@ -235,7 +307,7 @@ def stop() -> None:
     Process.current().sim.stop()
 
 
-def happens(intervals: Iterable[float]) -> Callable:
+def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     """
     Decorator used to set up a process that adds a new instance of another process at intervals dictated by the given
     sequence (which may be infinite).
@@ -260,22 +332,13 @@ def happens(intervals: Iterable[float]) -> Callable:
     """
     def hook(event: Callable):
         def make_happen(*args_event: Any, **kwargs_event: Any) -> None:
+            if name is not None:
+                local.name = cast(str, name)
             for interval in intervals:
                 advance(interval)
                 add(event, *args_event, **kwargs_event)
         return make_happen
     return hook
-
-
-class Named(object):
-
-    def __init__(self, name: Optional[str]) -> None:
-        super().__init__()
-        self._name = name or str(uuid4())
-
-    @property
-    def name(self) -> str:
-        return self._name
 
 
 class Queue(Named):
