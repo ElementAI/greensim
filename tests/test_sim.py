@@ -511,3 +511,15 @@ def test_resource_take_more_than_max():
 def test_resource_release_more_than_take():
     run_resource_test_incoherent(1, 2)
     run_resource_test_incoherent(3, 5)
+
+
+def test_resource_release_while_holding_none():
+    def proc(resource: Resource) -> None:
+        resource.release()
+        pytest.fail()
+
+    sim = Simulator()
+    resource = Resource(1)
+    sim.add(proc, resource)
+    with pytest.raises(RuntimeError):
+        sim.run()

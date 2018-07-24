@@ -4,8 +4,7 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from heapq import heappush, heappop
-from logging import getLogger, DEBUG, INFO, WARNING, ERROR, CRITICAL, NullHandler
-# from logging.handlers import NullHandler
+from logging import getLogger, DEBUG, INFO, WARNING, CRITICAL, NullHandler
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
 from uuid import uuid4
@@ -549,7 +548,8 @@ class Resource(Named):
         if self._usage.get(proc, 0) > 0:
             if num_instances > self._usage[proc]:
                 raise ValueError(
-                    f"Process holds {self._usage[proc]} instances, but requests to release more ({num_instances})"
+                    f"Process {proc.local.name} holds {self._usage[proc]} instances, " +
+                    f"but requests to release more ({num_instances})"
                 )
             self._usage[proc] -= num_instances
             self._num_instances_free += num_instances
@@ -571,7 +571,9 @@ class Resource(Named):
             else:
                 self._log(DEBUG, "release-queueempty")
         else:
-            self._log(ERROR, "release-gotnone", num_instances=num_instances)
+            raise RuntimeError(
+                f"Process {proc.local.name} tries to release {num_instances} instances, but is holding none.)"
+            )
 
     @contextmanager
     def using(self, num_instances: int = 1):
