@@ -196,6 +196,18 @@ def test_happens():
     assert pytest.approx([2.0, 4.0, 6.0, 8.0, 10.0]) == log
 
 
+def test_happens_named():
+    @happens([5], name="my-process")
+    def process():
+        advance(5)
+
+    sim = Simulator()
+    proc = sim.add(process)
+    sim.run()
+    assert proc.local.name == "my-process"
+    assert 10.0 == pytest.approx(sim.now())
+
+
 def sim_add_run(proc: Callable) -> None:
     sim = Simulator()
     sim.add(proc)
