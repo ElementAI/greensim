@@ -34,12 +34,12 @@ def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
         level,
         "",
         extra=dict(
-            sim_time = ts_now,
-            sim_process = name_process,
-            sim_name = name,
-            sim_object = obj,
-            sim_event = event,
-            sim_params = params
+            sim_time=ts_now,
+            sim_process=name_process,
+            sim_name=name,
+            sim_object=obj,
+            sim_event=event,
+            sim_params=params
         )
     )
 
@@ -176,7 +176,7 @@ class Simulator(Named):
             # event queue.
             for (i, (moment, counter, _, _, _)) in enumerate(self._events):
                 if counter == counter_stop_event:
-                    self._log(DEBUG, "cancel-stop", counter = counter_stop_event)
+                    self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
 
@@ -227,7 +227,7 @@ class _TreeLocalParamCurrent(_TreeLocalParam):
 
     def __setattr__(self, name: str, value: Any) -> Any:
         if name == "name":
-            _log(DEBUG, "Process", self.name, "rename", new = value)
+            _log(DEBUG, "Process", self.name, "rename", new=value)
         super().__setattr__(name, value)
 
 
@@ -286,7 +286,7 @@ def advance(delay: float) -> None:
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
-    _log(INFO, "Process", local.name, "advance", delay = delay)
+    _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     curr.sim._schedule(delay, curr.switch)
     curr.sim._switch()
@@ -405,7 +405,7 @@ class Queue(Named):
         """
         if not self.is_empty():
             _, process = heappop(self._waiting)
-            self._log(INFO, "pop", process = process.local.name)
+            self._log(INFO, "pop", process=process.local.name)
             process.resume()
 
 
@@ -472,7 +472,7 @@ def select(*signals: Signal) -> List[Signal]:
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
     common = Signal(name=local.name + "-selector").turn_off()
-    _log(INFO, "select", "select", "select", signals = [sig.name for sig in signals])
+    _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
     for signal in signals:
         add(wait_one, signal, common)
     common.wait()
