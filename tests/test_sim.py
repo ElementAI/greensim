@@ -5,7 +5,7 @@ from typing import List, Callable
 import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
-    Resource
+    Resource, add_in, add_at
 
 
 def test_schedule_none():
@@ -130,6 +130,44 @@ def test_schedule_functions():
     sim._schedule(3, f1, sim, results)
     sim.run()
     assert ['1 + 1.0', '2 + 2.0', '1 + 3.0'] == results
+
+
+def run_test_process_add(launcher):
+    when_last = 0.0
+
+    def last_proc():
+        nonlocal when_last
+        when_last = now()
+
+    sim = Simulator()
+    sim.add(launcher, last_proc)
+    sim.run()
+    assert pytest.approx(50.0) == when_last
+
+
+def test_process_add_in():
+    def launch(last):
+        advance(25)
+        add_in(25, last)
+
+    run_test_process_add(launch)
+
+
+def test_process_add_at():
+    def launch(last):
+        advance(25)
+        add_at(50, last)
+
+    run_test_process_add(launch)
+
+
+def test_process_add_at_past():
+    def launch(last):
+        advance(51)
+        add_at(50, last)
+
+    with pytest.raises(ValueError):
+        run_test_process_add(launch)
 
 
 def test_process_pause_resume():
