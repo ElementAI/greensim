@@ -148,18 +148,40 @@ class Simulator(Named):
         self._counter += 1
         return self
 
-    def add(self, fn_process: Callable, *args, **kwargs) -> 'Process':
+    def add(self, fn_process: Callable, *args: Any, **kwargs: Any) -> 'Process':
         """
         Adds a process to the simulation. The process is embodied by a function, which will be called with the given
         positional and keyword parameters when the simulation runs. As a process, this function runs on a special green
         thread, and thus will be able to call functions `now()`, `advance()`, `pause()` and `stop()` to articulate its
         events across the simulated timeline and control the simulation's flow.
         """
+        return self.add_in(0.0, fn_process, *args, **kwargs)
+
+    def add_in(self, delay: float, fn_process: Callable, *args: Any, **kwargs: Any) -> 'Process':
+        """
+        Adds a process to the simulation, which is made to start after the given delay in simulated time.
+
+        See method add() for more details.
+        """
         process = Process(self, fn_process, self._gr)
         if _logger is not None:
             self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
-        self._schedule(0.0, process.switch, *args, **kwargs)
+        self._schedule(delay, process.switch, *args, **kwargs)
         return process
+
+    def add_at(self, moment: float, fn_process: Callable, *args: Any, **kwargs: Any) -> 'Process':
+        """
+        Adds a process to the simulation, which is made to start at the given exact time on the simulated clock. Note
+        that times in the past when compared to the current moment on the simulated clock are forbidden.
+
+        See method add() for more details.
+        """
+        delay = moment - self.now()
+        if delay < 0.0:
+            raise ValueError(
+                f"The given moment to start the process ({moment:f}) is in the past (now is {self.now():f})."
+            )
+        return self.add_in(delay, fn_process, *args, **kwargs)
 
     def run(self, duration: float = inf) -> None:
         """
@@ -319,6 +341,14 @@ def now() -> float:
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
     return Process.current().sim.add(proc, *args, **kwargs)
+
+
+def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
+    return Process.current().sim.add_in(delay, proc, *args, **kwargs)
+
+
+def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
+    return Process.current().sim.add_at(moment, proc, *args, **kwargs)
 
 
 def stop() -> None:
