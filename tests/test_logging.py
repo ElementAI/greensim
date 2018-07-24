@@ -309,3 +309,31 @@ def test_auto_log_resource(auto_logger):
         (logging.INFO, 70.0, "beta", "Resource", "the-resource", "release", dict(num_instances=1, keeping=0, free=1)),
         (logging.INFO, 70.0, "", "Simulator", "sim", "stop", {})
     )
+
+
+def test_auto_log_resource_take_again(auto_logger):
+    def process(res):
+        local.name = "proc"
+        res.take(2)
+        advance(10)
+        res.take(3)
+        advance(10)
+        res.release(5)
+
+    sim = Simulator(name="sim")
+    resource = Resource(5, name="res")
+    sim.add(process, resource)
+    sim.run()
+
+    check_log(
+        auto_logger,
+        (logging.INFO, 0.0, "", "Simulator", "sim", "add", dict(fn=process, args=(resource,), kwargs={})),
+        (logging.INFO, 0.0, "", "Simulator", "sim", "run", dict(duration=inf)),
+        (logging.INFO, 0.0, "proc", "Resource", "res", "take", dict(num_instances=2, free=5)),
+        (logging.INFO, 0.0, "proc", "Process", "proc", "advance", dict(delay=10.0)),
+        (logging.INFO, 10.0, "proc", "Resource", "res", "take", dict(num_instances=3, free=3)),
+        (logging.WARNING, 10.0, "proc", "Resource", "res", "take-again", dict(already=2, more=3)),
+        (logging.INFO, 10.0, "proc", "Process", "proc", "advance", dict(delay=10.0)),
+        (logging.INFO, 20.0, "proc", "Resource", "res", "release", dict(num_instances=5, keeping=0, free=5)),
+        (logging.INFO, 20.0, "", "Simulator", "sim", "stop", {})
+    )
