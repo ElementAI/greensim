@@ -4,7 +4,7 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from heapq import heappush, heappop
-from logging import getLogger, DEBUG, INFO, WARNING, CRITICAL, NullHandler
+from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
 from uuid import uuid4
@@ -12,10 +12,19 @@ from uuid import uuid4
 import greenlet
 
 
-# Disable logging by default. Set a proper handler and level to enable logging.
-logger = getLogger(__name__)
-logger.setLevel(CRITICAL + 1)
-logger.addHandler(NullHandler())
+# Disable auto-logging by default: it bears a significant weight on performance. Auto-logging will be toggled using
+# enable_logging() and disable_logging().
+_logger = None
+
+
+def enable_logging():
+    global _logger
+    _logger = getLogger(__name__)
+
+
+def disable_logging():
+    global _logger
+    _logger = None
 
 
 def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
@@ -29,7 +38,7 @@ def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
     if "__now" in params:
         del params["__now"]
 
-    logger.log(
+    (_logger or getLogger(__name__)).log(
         level,
         "",
         extra=dict(
@@ -118,16 +127,17 @@ class Simulator(Named):
         Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
         and helper functions of this package.
         """
-        self._log(
-            DEBUG,
-            "schedule",
-            delay=delay,
-            fn=event,
-            args=args,
-            kwargs=kwargs,
-            counter=self._counter,
-            __now=self.now()
-        )
+        if _logger is not None:
+            self._log(
+                DEBUG,
+                "schedule",
+                delay=delay,
+                fn=event,
+                args=args,
+                kwargs=kwargs,
+                counter=self._counter,
+                __now=self.now()
+            )
         delay = float(delay)
         if delay < 0.0:
             raise ValueError("Delay must be positive.")
@@ -146,7 +156,8 @@ class Simulator(Named):
         events across the simulated timeline and control the simulation's flow.
         """
         process = Process(self, fn_process, self._gr)
-        self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
+        if _logger is not None:
+            self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
         self._schedule(0.0, process.switch, *args, **kwargs)
         return process
 
@@ -155,7 +166,8 @@ class Simulator(Named):
         Runs the simulation until a stopping condition is met (no more events, or an event invokes method stop()), or
         until the simulated clock hits the given duration.
         """
-        self._log(INFO, "run", __now=self.now(), duration=duration)
+        if _logger is not None:
+            self._log(INFO, "run", __now=self.now(), duration=duration)
         counter_stop_event = None
         if duration != inf:
             counter_stop_event = self._counter
@@ -164,10 +176,12 @@ class Simulator(Named):
         self._is_running = True
         while self.is_running and len(self._events) > 0:
             self._ts_now, cnt, event, args, kwargs = heappop(self._events)
-            self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
+            if _logger is not None:
+                self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
             event(*args, **kwargs)
         if len(self._events) == 0:
-            self._log(DEBUG, "out-of-events", __now=self.now())
+            if _logger is not None:
+                self._log(DEBUG, "out-of-events", __now=self.now())
         self.stop()
 
         if counter_stop_event is not None:
@@ -175,7 +189,8 @@ class Simulator(Named):
             # event queue.
             for (i, (moment, counter, _, _, _)) in enumerate(self._events):
                 if counter == counter_stop_event:
-                    self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
+                    if _logger is not None:
+                        self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
 
@@ -184,7 +199,8 @@ class Simulator(Named):
         Stops the running simulation once the current event is done executing.
         """
         if self.is_running:
-            self._log(INFO, "stop", __now=self.now())
+            if _logger is not None:
+                self._log(INFO, "stop", __now=self.now())
             self._is_running = False
 
     @property
@@ -225,7 +241,7 @@ class _TreeLocalParamCurrent(_TreeLocalParam):
         return Process.current().local
 
     def __setattr__(self, name: str, value: Any) -> Any:
-        if name == "name":
+        if _logger is not None and name == "name":
             _log(DEBUG, "Process", self.name, "rename", new=value)
         super().__setattr__(name, value)
 
@@ -267,7 +283,8 @@ class Process(greenlet.greenlet):
         current process or event: it merely schedules again the target process, so that its execution carries on at the
         return of the `pause()` function, when this new wake-up event fires.
         """
-        _log(INFO, "Process", self.local.name, "resume")
+        if _logger is not None:
+            _log(INFO, "Process", self.local.name, "resume")
         self.sim._schedule(0.0, self.switch)
 
 
@@ -276,7 +293,8 @@ def pause() -> None:
     Pauses the current process indefinitely -- it will require another process to `resume()` it. When this resumption
     happens, the process returns from this function.
     """
-    _log(INFO, "Process", local.name, "pause")
+    if _logger is not None:
+        _log(INFO, "Process", local.name, "pause")
     Process.current().sim._switch()
 
 
@@ -285,7 +303,8 @@ def advance(delay: float) -> None:
     Pauses the current process for the given delay (in simulated time). The process will be resumed when the simulation
     has advanced to the moment corresponding to `now() + delay`.
     """
-    _log(INFO, "Process", local.name, "advance", delay=delay)
+    if _logger is not None:
+        _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     curr.sim._schedule(delay, curr.switch)
     curr.sim._switch()
@@ -393,7 +412,8 @@ class Queue(Named):
         queue so that the process can eventually leave the queue and carry on with its execution.
         """
         self._counter += 1
-        self._log(INFO, "join")
+        if _logger is not None:
+            self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
         pause()
 
@@ -404,7 +424,8 @@ class Queue(Named):
         """
         if not self.is_empty():
             _, process = heappop(self._waiting)
-            self._log(INFO, "pop", process=process.local.name)
+            if _logger is not None:
+                self._log(INFO, "pop", process=process.local.name)
             process.resume()
 
 
@@ -436,7 +457,8 @@ class Signal(Named):
         off, remaining resumed processes join back the queue. If the queue discipline is not monotonic (for instance,
         if it bears a random component), then this toggling of the signal may reorder the processes.
         """
-        self._log(INFO, "turn-on")
+        if _logger is not None:
+            self._log(INFO, "turn-on")
         self._is_on = True
         while not self._queue.is_empty():
             self._queue.pop()
@@ -446,7 +468,8 @@ class Signal(Named):
         """
         Turns off the signal. This may be invoked from any code.
         """
-        self._log(INFO, "turn-off")
+        if _logger is not None:
+            self._log(INFO, "turn-off")
         self._is_on = False
         return self
 
@@ -454,7 +477,8 @@ class Signal(Named):
         """
         Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
         """
-        self._log(INFO, "wait")
+        if _logger is not None:
+            self._log(INFO, "wait")
         while not self.is_on:
             self._queue.join()
 
@@ -471,7 +495,8 @@ def select(*signals: Signal) -> List[Signal]:
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
     common = Signal(name=local.name + "-selector").turn_off()
-    _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
+    if _logger is not None:
+        _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
     for signal in signals:
         add(wait_one, signal, common)
     common.wait()
@@ -526,14 +551,15 @@ class Resource(Named):
             raise ValueError(
                 f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
             )
-        self._log(INFO, "take", num_instances=num_instances, free=self.num_instances_free)
+        if _logger is not None:
+            self._log(INFO, "take", num_instances=num_instances, free=self.num_instances_free)
         proc = Process.current()
         if self._num_instances_free < num_instances:
             proc.local.__num_instances_required = num_instances
             self._waiting.join()
             del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
-        if proc in self._usage:
+        if _logger is not None and proc in self._usage:
             self._log(WARNING, "take-again", already=self._usage[proc], more=num_instances)
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
@@ -553,22 +579,23 @@ class Resource(Named):
                 )
             self._usage[proc] -= num_instances
             self._num_instances_free += num_instances
-            self._log(
-                INFO,
-                "release",
-                num_instances=num_instances,
-                keeping=self._usage[proc],
-                free=self.num_instances_free
-            )
+            if _logger is not None:
+                self._log(
+                    INFO,
+                    "release",
+                    num_instances=num_instances,
+                    keeping=self._usage[proc],
+                    free=self.num_instances_free
+                )
             if self._usage[proc] <= 0:
                 del self._usage[proc]
             if not self._waiting.is_empty():
                 num_instances_next = cast(int, self._waiting.peek().local.__num_instances_required)
                 if num_instances_next <= self.num_instances_free:
                     self._waiting.pop()
-                else:
+                elif _logger is not None:
                     self._log(DEBUG, "release-nopop", next_requires=num_instances_next, free=self.num_instances_free)
-            else:
+            elif _logger is not None:
                 self._log(DEBUG, "release-queueempty")
         else:
             raise RuntimeError(

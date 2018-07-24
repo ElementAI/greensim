@@ -4,7 +4,8 @@ from typing import cast
 
 import pytest
 
-from greensim import Simulator, advance, pause, local, add, Process, Queue, Signal, Resource
+from greensim import Simulator, advance, pause, local, add, Process, Queue, Signal, Resource, \
+    enable_logging, disable_logging
 from greensim.logging import Filter
 
 
@@ -27,6 +28,7 @@ class HandlerTestsGeneral(logging.Handler):
 
 @pytest.fixture
 def logger():
+    disable_logging()
     logger = logging.getLogger(__name__)
 
     for h in [handler for handler in logger.handlers if isinstance(handler, HandlerTestsGeneral)]:
@@ -129,6 +131,7 @@ class HandlerTestsAutoLog(HandlerTestsGeneral):
 
 @pytest.fixture
 def auto_logger():
+    enable_logging()
     logger = logging.getLogger("greensim")
     logger.setLevel(logging.INFO)
 
