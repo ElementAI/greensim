@@ -42,6 +42,10 @@ def capture_print(file_dest_maybe: Optional[IO] = None):
     return _print_progress
 
 
+def now_real():
+    return time.time()
+
+
 def track_progress(
     measure: MeasureProgress,
     target: MetricProgress,
@@ -62,11 +66,11 @@ def track_progress(
         return all(p >= t for p, t in progress)
 
     capture = capture_maybe or capture_print()
-    rt_started = time.time()
+    rt_started = now_real()
     while True:
         advance(interval_check)
 
-        rt_elapsed = time.time() - rt_started
+        rt_elapsed = now_real() - rt_started
         progress = measure_to_target()
         ratio_progress_min = min(m / t for m, t in progress)
         if ratio_progress_min == 0.0:

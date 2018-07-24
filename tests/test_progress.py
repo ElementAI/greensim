@@ -1,6 +1,8 @@
 from io import StringIO
+import itertools
 from math import inf
 import time
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -106,6 +108,10 @@ def test_progress_capture():
     assert log == pytest.approx([0.0, 0.0, 0.1, 0.4, 0.5, 1.0])
 
 
+ticker_200ms = Mock(side_effect=(0.2 * n for n in itertools.count(0)))
+
+
+@patch('greensim.progress.now_real', ticker_200ms)
 def test_progress_real_time():
     log = []
 
@@ -114,7 +120,6 @@ def test_progress_real_time():
 
     def sleeper(interval, rt_delay):
         while True:
-            time.sleep(rt_delay)
             advance(interval)
 
     sim = Simulator()
@@ -122,7 +127,7 @@ def test_progress_real_time():
     sim.add(sleeper, 10.0, 0.1)
     sim.run()
 
-    assert log == pytest.approx([0.8, 0.6, 0.4, 0.2, 0.0], abs=1e-2)
+    assert log == pytest.approx([0.8, 0.6, 0.4, 0.2, 0.0])
 
 
 def test_capture_print():
