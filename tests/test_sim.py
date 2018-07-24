@@ -241,7 +241,7 @@ def test_local_replace_hierarchy():
 
 
 def is_uuid(s: str) -> bool:
-    return re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', s)
+    return re.match('[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}', s) is not None
 
 
 def test_process_has_default_name():
