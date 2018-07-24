@@ -502,7 +502,7 @@ class Resource(Named):
     ) -> None:
         super().__init__(name)
         self._num_instances_free = num_instances
-        self._waiting = Queue(get_order_token)
+        self._waiting = Queue(get_order_token, name=self.name + "-queue")
         self._usage: Dict[Process, int] = {}
 
     @property
@@ -527,12 +527,15 @@ class Resource(Named):
             raise ValueError(
                 f"Process must request at most {self.num_instances_total} instances; here requested {num_instances}."
             )
+        self._log(INFO, "take", num_instances=num_instances, free=self.num_instances_free)
         proc = Process.current()
         if self._num_instances_free < num_instances:
             proc.local.__num_instances_required = num_instances
             self._waiting.join()
             del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
+        if proc in self._usage:
+            self._log(WARNING, "take-again", already=self._usage[proc], more=num_instances)
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
 
@@ -546,16 +549,29 @@ class Resource(Named):
         if self._usage.get(proc, 0) > 0:
             if num_instances > self._usage[proc]:
                 raise ValueError(
-                    f"Process holds {self._usage[proc]} instances, but requests too release more ({num_instances})"
+                    f"Process holds {self._usage[proc]} instances, but requests to release more ({num_instances})"
                 )
             self._usage[proc] -= num_instances
+            self._num_instances_free += num_instances
+            self._log(
+                INFO,
+                "release",
+                num_instances=num_instances,
+                keeping=self._usage[proc],
+                free=self.num_instances_free
+            )
             if self._usage[proc] <= 0:
                 del self._usage[proc]
-            self._num_instances_free += num_instances
             if not self._waiting.is_empty():
                 num_instances_next = cast(int, self._waiting.peek().local.__num_instances_required)
                 if num_instances_next <= self.num_instances_free:
                     self._waiting.pop()
+                else:
+                    self._log(DEBUG, "release-nopop", next_requires=num_instances_next, free=self.num_instances_free)
+            else:
+                self._log(DEBUG, "release-queueempty")
+        else:
+            self._log(ERROR, "release-gotnone", num_instances=num_instances)
 
     @contextmanager
     def using(self, num_instances: int = 1):

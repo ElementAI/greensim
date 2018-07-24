@@ -111,7 +111,7 @@ def test_interleaved_sequence():
     sim.run()
     assert [(0.0, 'p1', 0), (2.0, 'p1', 1), (4.0, 'p1', 2), (6.0, 'p1', 3), (8.0, 'p1', 4)] == results_p1
     assert [(1.0, 'p2', 0), (3.0, 'p2', 1), (5.0, 'p2', 2), (7.0, 'p2', 3), (9.0, 'p2', 4)] == results_p2
-    assert not sim.is_running()
+    assert not sim.is_running
 
 
 def test_schedule_functions():

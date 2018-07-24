@@ -271,5 +271,41 @@ def test_auto_log_signal(auto_logger):
     )
 
 
-def test_auto_log_resource():
-    pytest.fail()
+def test_auto_log_resource(auto_logger):
+    def proc(res, name, delay_before, delay_with):
+        local.name = name
+        advance(delay_before)
+        with res.using():
+            advance(delay_with)
+
+    resource = Resource(1, name="the-resource")
+    sim = Simulator(name="sim")
+    sim.add(proc, resource, "alpha", 10, 50)
+    sim.add(proc, resource, "beta", 30, 10)
+    sim.run()
+
+    check_log(
+        auto_logger,
+        (
+            logging.INFO, 0.0, "", "Simulator", "sim", "add",
+            dict(fn=proc, args=(resource, "alpha", 10.0, 50.0), kwargs={})
+        ),
+        (
+            logging.INFO, 0.0, "", "Simulator", "sim", "add",
+            dict(fn=proc, args=(resource, "beta", 30.0, 10.0), kwargs={})
+        ),
+        (logging.INFO, 0.0, "", "Simulator", "sim", "run", dict(duration=inf)),
+        (logging.INFO, 0.0, "alpha", "Process", "alpha", "advance", dict(delay=10.0)),
+        (logging.INFO, 0.0, "beta", "Process", "beta", "advance", dict(delay=30.0)),
+        (logging.INFO, 10.0, "alpha", "Resource", "the-resource", "take", dict(num_instances=1, free=1)),
+        (logging.INFO, 10.0, "alpha", "Process", "alpha", "advance", dict(delay=50.0)),
+        (logging.INFO, 30.0, "beta", "Resource", "the-resource", "take", dict(num_instances=1, free=0)),
+        (logging.INFO, 30.0, "beta", "Queue", "the-resource-queue", "join", {}),
+        (logging.INFO, 30.0, "beta", "Process", "beta", "pause", {}),
+        (logging.INFO, 60.0, "alpha", "Resource", "the-resource", "release", dict(num_instances=1, keeping=0, free=1)),
+        (logging.INFO, 60.0, "alpha", "Queue", "the-resource-queue", "pop", dict(process="beta")),
+        (logging.INFO, 60.0, "alpha", "Process", "beta", "resume", {}),
+        (logging.INFO, 60.0, "beta", "Process", "beta", "advance", dict(delay=10.0)),
+        (logging.INFO, 70.0, "beta", "Resource", "the-resource", "release", dict(num_instances=1, keeping=0, free=1)),
+        (logging.INFO, 70.0, "", "Simulator", "sim", "stop", {})
+    )
