@@ -6,10 +6,10 @@ with open("README.md", "r") as file_long_description:
 
 setup(
     name='greensim',
-    version='2.0',
+    version='2.0.1',
     packages=['greensim'],
     data_files=[('.', ['LICENSE'])],
-    install_requires=['greenlet==0.4.13'],
+    install_requires=['greenlet==0.4.14'],
     description='Discrete event simulation toolkit based on greenlets',
     long_description=long_description,
     long_description_content_type="text/markdown",
