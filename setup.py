@@ -4,7 +4,7 @@ from setuptools import setup
 # version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
 setup(
     name='greensim',
-    version='1.1.2',
+    version='2.0',
     packages=['greensim'],
     install_requires=['greenlet==0.4.13'],
     description='Discrete event simulation toolkit based on greenlets',
