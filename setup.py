@@ -1,12 +1,22 @@
 from setuptools import setup
 # from subprocess import check_output
 
-# version=check_output(("git", "describe", "--tags"), universal_newlines=True).strip(),
+with open("README.md", "r") as file_long_description:
+    long_description = file_long_description.read()
+
 setup(
     name='greensim',
     version='2.0',
     packages=['greensim'],
+    data_files=[('.', ['LICENSE'])],
     install_requires=['greenlet==0.4.13'],
     description='Discrete event simulation toolkit based on greenlets',
-    long_description=open('README.md').read()
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/ElementAI/greensim",
+    classifiers=(
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent"
+    )
 )
