@@ -20,5 +20,4 @@ calling method `run()` over again, and so on.
 Take a look at the files in [examples]() subdirectory to get a concrete
 understanding.
 
-Reference documentation for classes `Simulator` and `Process` is available as
-docstrings.
+Reference documentation for classes and tools is available as docstrings.
