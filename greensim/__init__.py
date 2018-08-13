@@ -343,26 +343,26 @@ def now() -> float:
     """
     Returns current simulated time to the running process.
     """
-    return Process.current().rsim().now()
+    return Process.current().rsim().now()  # type: ignore
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add(proc, *args, **kwargs)
+    return Process.current().rsim().add(proc, *args, **kwargs)  # type: ignore
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)
+    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)  # type: ignore
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)
+    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)  # type: ignore
 
 
 def stop() -> None:
     """
     Stops the ongoing simulation, from a process.
     """
-    return Process.current().rsim().stop()
+    Process.current().rsim().stop()  # type: ignore
 
 
 def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
