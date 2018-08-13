@@ -238,8 +238,8 @@ class Simulator(Named):
         Destructor: kill all outstanding processes so that everything gets properly deleted.
         """
         for _, event, _, _ in self.events():
-            if isinstance(event.__self__, Process):
-                event.__self__.throw()
+            if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
+                event.__self__.throw()                                              # type: ignore
 
 
 class _TreeLocalParam(object):
@@ -312,7 +312,7 @@ class Process(greenlet.greenlet):
             _log(INFO, "Process", self.local.name, "resume")
         if self.rsim() is None:
             raise RuntimeError("Resuming a fellow process after simulator discarded.")
-        self.rsim()._schedule(0.0, self.switch)
+        self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
 
 def pause() -> None:
@@ -325,7 +325,7 @@ def pause() -> None:
     rsim = Process.current().rsim
     if rsim() is None:
         raise RuntimeError("Pausing a process after simulator discarded.")
-    rsim()._gr.switch()
+    rsim()._gr.switch()  # type: ignore
 
 
 def advance(delay: float) -> None:
@@ -339,8 +339,8 @@ def advance(delay: float) -> None:
     rsim = curr.rsim
     if rsim() is None:
         raise RuntimeError("Advancing time for a process after simulator discarded.")
-    rsim()._schedule(delay, curr.switch)
-    rsim()._gr.switch()
+    rsim()._schedule(delay, curr.switch)  # type: ignore
+    rsim()._gr.switch()                   # type: ignore
 
 
 def now() -> float:
