@@ -310,8 +310,6 @@ class Process(greenlet.greenlet):
         """
         if _logger is not None:
             _log(INFO, "Process", self.local.name, "resume")
-        if self.rsim() is None:
-            raise RuntimeError("Resuming a fellow process after simulator discarded.")
         self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
 
@@ -337,8 +335,6 @@ def advance(delay: float) -> None:
         _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     rsim = curr.rsim
-    if rsim() is None:
-        raise RuntimeError("Advancing time for a process after simulator discarded.")
     rsim()._schedule(delay, curr.switch)  # type: ignore
     rsim()._gr.switch()                   # type: ignore
 
@@ -347,41 +343,26 @@ def now() -> float:
     """
     Returns current simulated time to the running process.
     """
-    sim = Process.current().rsim()
-    if sim is None:
-        raise RuntimeError("Checking time against a simulator previously discarded.")
-    return sim.now()
+    return Process.current().rsim().now()
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    sim = Process.current().rsim()
-    if sim is None:
-        raise RuntimeError("Adding a new process to a simulator previously discarded.")
-    return sim.add(proc, *args, **kwargs)
+    return Process.current().rsim().add(proc, *args, **kwargs)
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    sim = Process.current().rsim()
-    if sim is None:
-        raise RuntimeError("Adding a new process to a simulator previously discarded.")
-    return sim.add_in(delay, proc, *args, **kwargs)
+    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    sim = Process.current().rsim()
-    if sim is None:
-        raise RuntimeError("Adding a new process to a simulator previously discarded.")
-    return sim.add_at(moment, proc, *args, **kwargs)
+    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)
 
 
 def stop() -> None:
     """
     Stops the ongoing simulation, from a process.
     """
-    sim = Process.current().rsim()
-    if sim is None:
-        raise RuntimeError("Stopping simulation from a previously dead simulator!")
-    sim.stop()
+    return Process.current().rsim().stop()
 
 
 def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
