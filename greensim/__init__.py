@@ -8,6 +8,7 @@ from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
 from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
 from uuid import uuid4
+import weakref
 
 import greenlet
 
@@ -232,11 +233,13 @@ class Simulator(Named):
         """
         return self._is_running
 
-    def _switch(self) -> None:
+    def __del__(self) -> None:
         """
-        Gives control back to the simulator. Meant to be called from a process greenlet.
+        Destructor: kill all outstanding processes so that everything gets properly deleted.
         """
-        self._gr.switch()
+        for _, event, _, _ in self.events():
+            if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
+                event.__self__.throw()                                              # type: ignore
 
 
 class _TreeLocalParam(object):
@@ -285,7 +288,7 @@ class Process(greenlet.greenlet):
 
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         super().__init__(run, parent)
-        self.sim = sim
+        self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
 
@@ -307,7 +310,7 @@ class Process(greenlet.greenlet):
         """
         if _logger is not None:
             _log(INFO, "Process", self.local.name, "resume")
-        self.sim._schedule(0.0, self.switch)
+        self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
 
 def pause() -> None:
@@ -317,7 +320,10 @@ def pause() -> None:
     """
     if _logger is not None:
         _log(INFO, "Process", local.name, "pause")
-    Process.current().sim._switch()
+    rsim = Process.current().rsim
+    if rsim() is None:
+        raise RuntimeError("Pausing a process after simulator discarded.")
+    rsim()._gr.switch()  # type: ignore
 
 
 def advance(delay: float) -> None:
@@ -328,34 +334,35 @@ def advance(delay: float) -> None:
     if _logger is not None:
         _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
-    curr.sim._schedule(delay, curr.switch)
-    curr.sim._switch()
+    rsim = curr.rsim
+    rsim()._schedule(delay, curr.switch)  # type: ignore
+    rsim()._gr.switch()                   # type: ignore
 
 
 def now() -> float:
     """
     Returns current simulated time to the running process.
     """
-    return Process.current().sim.now()
+    return Process.current().rsim().now()  # type: ignore
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add(proc, *args, **kwargs)
+    return Process.current().rsim().add(proc, *args, **kwargs)  # type: ignore
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add_in(delay, proc, *args, **kwargs)
+    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)  # type: ignore
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add_at(moment, proc, *args, **kwargs)
+    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)  # type: ignore
 
 
 def stop() -> None:
     """
     Stops the ongoing simulation, from a process.
     """
-    Process.current().sim.stop()
+    Process.current().rsim().stop()  # type: ignore
 
 
 def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
