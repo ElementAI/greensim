@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from heapq import heappush, heappop
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
-from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
+from types import TracebackType
+from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any, Type
 from uuid import uuid4
 import weakref
 
@@ -243,6 +244,18 @@ class Simulator(Named):
                 event.__self__.throw()                                              # type: ignore
         self._events.clear()
         self._ts_now = 0.0
+
+    def __enter__(self) -> "Simulator":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type],
+        exc_value: Optional[Exception],
+        traceback: Optional[TracebackType]
+    ) -> bool:
+        self._clear()
+        return False
 
     def __del__(self) -> None:
         """

@@ -618,3 +618,12 @@ def test_simulator_gc_processes_hanging(log_destroy):
     sim = None
     gc.collect(0)
     assert log_destroy == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish", "sim"]
+
+
+def test_simulator_context_manager(log_destroy):
+    with set_up_simulator_with_destructor(log_destroy) as sim:
+        sim.run(15.0)
+        assert len(list(sim.events())) > 0
+        assert log_destroy == ["A finish"]
+    # Unsure whether the GC will have reclaimed the Simulator instance yet, but processes *must* have been torn down.
+    assert log_destroy[0:7] == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish"]
