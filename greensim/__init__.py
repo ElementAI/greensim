@@ -90,6 +90,20 @@ class Simulator(Named):
     only rule is that events cannot be scheduled in the past. The simulation stops once all events have been executed,
     or one of the events invokes the stop() method of the Simulator instance; at this moment, method run() returns. It
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
+
+    When running multiple simulations from a single process, one may become concerned that hanging processes come to
+    use memory unduly. Processes hold a weak reference to the simulator they run in context of, so once all explicit
+    references to the simulator are discarded, it is garbage-collected; its destructor then tears down all hanging
+    processes, thereby freeing all simulation resources. However, to deliberately track and free simulation resources,
+    one may use the simulator instance as a context manager, as in this example:
+
+    with Simulator() as sim:
+        sim.add(...)
+        # ...
+        sim.run(...)
+        # ...
+
+    Simulation resources and hanging processes are explicitly torn down on context exit.
     """
 
     def __init__(self, ts_now: float = 0.0, name: Optional[str] = None) -> None:
