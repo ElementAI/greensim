@@ -233,13 +233,22 @@ class Simulator(Named):
         """
         return self._is_running
 
-    def __del__(self) -> None:
+    def _clear(self) -> None:
         """
-        Destructor: kill all outstanding processes so that everything gets properly deleted.
+        Resets the internal state of the simulator, and sets the simulated clock back to 0.0. This discards all
+        outstanding events and tears down hanging process instances.
         """
         for _, event, _, _ in self.events():
             if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
                 event.__self__.throw()                                              # type: ignore
+        self._events.clear()
+        self._ts_now = 0.0
+
+    def __del__(self) -> None:
+        """
+        Destructor: kill all outstanding processes so that everything gets properly deleted.
+        """
+        self._clear()
 
 
 class _TreeLocalParam(object):
