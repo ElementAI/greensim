@@ -342,10 +342,7 @@ def pause() -> None:
     """
     if _logger is not None:
         _log(INFO, "Process", local.name, "pause")
-    rsim = Process.current().rsim
-    if rsim() is None:
-        raise RuntimeError("Pausing a process after simulator discarded.")
-    rsim()._gr.switch()  # type: ignore
+    Process.current().rsim()._gr.switch()  # type: ignore
 
 
 def advance(delay: float) -> None:
