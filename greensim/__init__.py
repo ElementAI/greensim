@@ -217,6 +217,7 @@ class Simulator(Named):
             if _logger is not None:
                 self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
             event(*args, **kwargs)
+
         if len(self._events) == 0:
             if _logger is not None:
                 self._log(DEBUG, "out-of-events", __now=self.now())
@@ -231,6 +232,15 @@ class Simulator(Named):
                         self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
+
+    def step(self) -> None:
+        """
+        Runs a single event of the simulation.
+        """
+        self._ts_now, cnt, event, args, kwargs = heappop(self._events)
+        if _logger is not None:
+            self._log(DEBUG, "step-event", counter=cnt, __now=self.now())
+        event(*args, **kwargs)
 
     def stop(self) -> None:
         """
