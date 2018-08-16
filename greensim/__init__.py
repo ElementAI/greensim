@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from heapq import heappush, heappop
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
-from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
+from types import TracebackType
+from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any, Type
 from uuid import uuid4
 import weakref
 
@@ -89,6 +90,20 @@ class Simulator(Named):
     only rule is that events cannot be scheduled in the past. The simulation stops once all events have been executed,
     or one of the events invokes the stop() method of the Simulator instance; at this moment, method run() returns. It
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
+
+    When running multiple simulations from a single process, one may become concerned that hanging processes come to
+    use memory unduly. Processes hold a weak reference to the simulator they run in context of, so once all explicit
+    references to the simulator are discarded, it is garbage-collected; its destructor then tears down all hanging
+    processes, thereby freeing all simulation resources. However, to deliberately track and free simulation resources,
+    one may use the simulator instance as a context manager, as in this example:
+
+    with Simulator() as sim:
+        sim.add(...)
+        # ...
+        sim.run(...)
+        # ...
+
+    Simulation resources and hanging processes are explicitly torn down on context exit.
     """
 
     def __init__(self, ts_now: float = 0.0, name: Optional[str] = None) -> None:
@@ -233,13 +248,34 @@ class Simulator(Named):
         """
         return self._is_running
 
-    def __del__(self) -> None:
+    def _clear(self) -> None:
         """
-        Destructor: kill all outstanding processes so that everything gets properly deleted.
+        Resets the internal state of the simulator, and sets the simulated clock back to 0.0. This discards all
+        outstanding events and tears down hanging process instances.
         """
         for _, event, _, _ in self.events():
             if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
                 event.__self__.throw()                                              # type: ignore
+        self._events.clear()
+        self._ts_now = 0.0
+
+    def __enter__(self) -> "Simulator":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type],
+        exc_value: Optional[Exception],
+        traceback: Optional[TracebackType]
+    ) -> bool:
+        self._clear()
+        return False
+
+    def __del__(self) -> None:
+        """
+        Destructor: kill all outstanding processes so that everything gets properly deleted.
+        """
+        self._clear()
 
 
 class _TreeLocalParam(object):
@@ -320,10 +356,7 @@ def pause() -> None:
     """
     if _logger is not None:
         _log(INFO, "Process", local.name, "pause")
-    rsim = Process.current().rsim
-    if rsim() is None:
-        raise RuntimeError("Pausing a process after simulator discarded.")
-    rsim()._gr.switch()  # type: ignore
+    Process.current().rsim()._gr.switch()  # type: ignore
 
 
 def advance(delay: float) -> None:
