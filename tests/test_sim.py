@@ -77,6 +77,25 @@ def test_process_advance():
     assert ll == [0.0, 1.0, 6.0]
 
 
+def test_simulator_step():
+    def process(ll):
+        ll.append(now())
+        advance(1.0)
+        ll.append(now())
+        advance(5.0)
+        ll.append(now())
+
+    ll = []
+    sim = Simulator()
+    sim.add(process, ll)
+    sim.step()
+    assert ll == pytest.approx([0.0])
+    sim.step()
+    assert ll == pytest.approx([0.0, 1.0])
+    sim.step()
+    assert ll == pytest.approx([0.0, 1.0, 6.0])
+
+
 def test_process_multiple():
     def tick(name, period, log):
         while True:
