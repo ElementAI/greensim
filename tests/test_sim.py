@@ -92,7 +92,7 @@ def test_process_multiple():
         [(n, "seven") for n in range(7, 100, 7)] +
         [(n, "three") for n in range(3, 100, 3)],
         key=lambda p: p[0]
-    )
+    ) == log
 
 
 def test_interleaved_sequence():
@@ -374,38 +374,48 @@ def test_queue_length():
     assert 0 == len(queue)
 
 
-def wait_for(signal: Signal, times_expected: List[float], delay_between: float):
+def wait_for(signal: Signal, times_expected: List[float], delay_between: float, log: List[float] = []):
     for expected in times_expected:
         advance(delay_between)
         signal.wait()
         assert pytest.approx(expected) == now()
+        log.append(now())
 
 
 def test_signal_already_on():
     sim = Simulator()
     signal = Signal().turn_on()
-    sim.add(wait_for, signal, [1.0], 1.0)
+    log = []
+    expectation = [1.0]
+    sim.add(wait_for, signal, expectation, 1.0, log)
     sim.run()
+    assert expectation == log
 
 
 def test_signal_wait_a_while():
     sim = Simulator()
     signal = Signal().turn_off()
-    sim.add(wait_for, signal, [3.0, 4.0], 1.0)
+    log = []
+    expectation = [3.0, 4.0]
+    sim.add(wait_for, signal, expectation, 1.0, log)
     sim._schedule(3.0, signal.turn_on)
     sim.run()
+    assert expectation == log
 
 
 def test_signal_toggling():
     sim = Simulator()
     signal = Signal().turn_off()
-    sim.add(wait_for, signal, [3.0, 4.0, 10.0, 13.0], 1.0)
+    log = []
+    expectation = [3.0, 4.0, 10.0, 13.0, 14.0, 15.0]
+    sim.add(wait_for, signal, expectation, 1.0, log)
     sim._schedule(3.0, signal.turn_on)
     sim._schedule(4.5, signal.turn_off)
     sim._schedule(10.0, signal.turn_on)
     sim._schedule(10.1, signal.turn_off)
     sim._schedule(13.0, signal.turn_on)
     sim.run()
+    assert expectation == log
 
 
 def test_signal_waiter_turning_off():
