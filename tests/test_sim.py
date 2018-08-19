@@ -660,7 +660,6 @@ def test_malware_constructor():
         pass
 
     sheriff_jordan = LabeledCallable(lambda x: x, "jordan", False)
-    
 
     assert bonnie.is_malware and clyde.is_malware
     assert not (captain_hamer.is_malware or sheriff_jordan.is_malware)
@@ -671,7 +670,7 @@ def test_malware_constructor():
     assert captain_hamer.label == "hamer"
     assert sheriff_jordan.label == "jordan"
 
-    
+
 def run_test_labeled_add(labeled_launcher, stop, expected_mal, expected_label):
     when_last = 0.0
 
@@ -686,12 +685,12 @@ def run_test_labeled_add(labeled_launcher, stop, expected_mal, expected_label):
     sim.run()
     assert pytest.approx(stop) == when_last
 
-    
+
 def test_labeled_process_add_vanilla():
 
     step = 25
     label = "name"
-    
+
     @malware(label)
     def bad_launch(last):
         advance(step)
@@ -706,41 +705,42 @@ def test_labeled_process_add_vanilla():
 
     run_test_labeled_add(good_launch, step, False, label)
 
-    
+
 def test_labeled_process_add_in():
 
     step = 25
     label = "name"
-    
+
     @malware(label)
     def bad_launch(last):
         advance(step)
         add_in(step, last)
 
-    run_test_labeled_add(bad_launch, 2*step, True, label)
+    run_test_labeled_add(bad_launch, 2 * step, True, label)
 
     @labeled(label, False)
     def good_launch(last):
         advance(step)
         add_in(step, last)
 
-    run_test_labeled_add(good_launch, 2*step, False, label)
+    run_test_labeled_add(good_launch, 2 * step, False, label)
+
 
 def test_labeled_process_add_at():
 
     step = 25
     label = "name"
-    
+
     @malware(label)
     def bad_launch(last):
         advance(step)
-        add_at(2*step, last)
+        add_at(2 * step, last)
 
-    run_test_labeled_add(bad_launch, 2*step, True, label)
+    run_test_labeled_add(bad_launch, 2 * step, True, label)
 
     @labeled(label, False)
     def good_launch(last):
         advance(step)
-        add_at(2*step, last)
+        add_at(2 * step, last)
 
-    run_test_labeled_add(good_launch, 2*step, False, label)
+    run_test_labeled_add(good_launch, 2 * step, False, label)

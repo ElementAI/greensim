@@ -189,7 +189,10 @@ def test_auto_log_process(auto_logger):
             dict(delay=10.0, fn=proc_proc.switch, args=(), kwargs={}, counter=1)
         ),
         (logging.DEBUG, 10.0, "", "Simulator", sim.name, "exec-event", dict(counter=1)),
-        (logging.INFO, 10.0, name_proc, "Simulator", sim.name, "add", dict(fn=proc_resumer._run, args=(proc_proc,), kwargs={})),
+        (
+            logging.INFO, 10.0, name_proc, "Simulator", sim.name, "add",
+            dict(fn=proc_resumer._run, args=(proc_proc,), kwargs={})
+        ),
         (
             logging.DEBUG, 10.0, name_proc, "Simulator", sim.name, "schedule",
             dict(delay=0.0, fn=proc_resumer.switch, args=(proc_proc,), kwargs={}, counter=2)

@@ -331,7 +331,7 @@ class Process(greenlet.greenlet):
     Through their `local` public data member, processes may store arbitrary values that can be then manipulated by other
     processes (no risk of race condition). This is useful for implementing non-trivial queue disciplines, for instance.
     """
-    
+
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         super().__init__(run, parent)
         self.rsim = weakref.ref(sim)
@@ -345,7 +345,7 @@ class Process(greenlet.greenlet):
             self._label = getattr(run, "label")
         else:
             self._label = self.local.name
-        #Accessible for testing. Specifically to get the generated LabeledCallable
+        # Accessible for testing. Specifically to get the generated LabeledCallable
         self._run = run
 
     @staticmethod
@@ -414,7 +414,7 @@ def now() -> float:
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add(LabeledCallable(proc, # type: ignore
+    return Process.current().rsim().add(LabeledCallable(proc,  # type: ignore
                                                         Process.current().label,
                                                         Process.current().is_malware),
                                         *args,
@@ -422,16 +422,16 @@ def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_in(delay, # type: ignore
+    return Process.current().rsim().add_in(delay,  # type: ignore
                                            LabeledCallable(proc,
                                                            Process.current().label,
                                                            Process.current().is_malware),
                                            *args,
-                                           **kwargs)  
+                                           **kwargs)
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_at(moment, # type: ignore
+    return Process.current().rsim().add_at(moment,  # type: ignore
                                            LabeledCallable(proc,
                                                            Process.current().label,
                                                            Process.current().is_malware),
@@ -479,6 +479,7 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
         return make_happen
     return hook
 
+
 class LabeledCallable(object):
     def __init__(self, event: Callable, label: str, is_malware: bool) -> None:
         self.event = event
@@ -515,7 +516,8 @@ def labeled(label: str, is_malware: bool) -> Callable:
     def hook(event: Callable):
         return LabeledCallable(event, label, is_malware)
     return hook
-    
+
+
 def malware(label: str) -> Callable:
     """
     Convenience decorator for identifying malware.
