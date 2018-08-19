@@ -21,7 +21,7 @@ def test_default_random(rng):
 
 def check_vr(vr, expected, num=5):
     approx = pytest.approx
-    if isinstance(expected[0], int):
+    if isinstance(expected[0], int) or isinstance(expected[0], str):
         def ident(n):
             return n
         approx = ident

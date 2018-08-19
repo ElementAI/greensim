@@ -6,8 +6,10 @@ from contextlib import contextmanager
 from heapq import heappush, heappop
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
-from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any
+from types import TracebackType
+from typing import cast, Callable, Tuple, List, Iterable, Optional, Dict, Sequence, Mapping, Any, Type
 from uuid import uuid4
+import weakref
 
 import greenlet
 
@@ -88,6 +90,20 @@ class Simulator(Named):
     only rule is that events cannot be scheduled in the past. The simulation stops once all events have been executed,
     or one of the events invokes the stop() method of the Simulator instance; at this moment, method run() returns. It
     may be called again to resume the simulation, and so on as many times as makes sense to study the model.
+
+    When running multiple simulations from a single process, one may become concerned that hanging processes come to
+    use memory unduly. Processes hold a weak reference to the simulator they run in context of, so once all explicit
+    references to the simulator are discarded, it is garbage-collected; its destructor then tears down all hanging
+    processes, thereby freeing all simulation resources. However, to deliberately track and free simulation resources,
+    one may use the simulator instance as a context manager, as in this example:
+
+    with Simulator() as sim:
+        sim.add(...)
+        # ...
+        sim.run(...)
+        # ...
+
+    Simulation resources and hanging processes are explicitly torn down on context exit.
     """
 
     def __init__(self, ts_now: float = 0.0, name: Optional[str] = None) -> None:
@@ -201,6 +217,7 @@ class Simulator(Named):
             if _logger is not None:
                 self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
             event(*args, **kwargs)
+
         if len(self._events) == 0:
             if _logger is not None:
                 self._log(DEBUG, "out-of-events", __now=self.now())
@@ -215,6 +232,15 @@ class Simulator(Named):
                         self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
                     self._events[i] = (moment, counter, lambda: None, (), {})
                     break
+
+    def step(self) -> None:
+        """
+        Runs a single event of the simulation.
+        """
+        self._ts_now, cnt, event, args, kwargs = heappop(self._events)
+        if _logger is not None:
+            self._log(DEBUG, "step-event", counter=cnt, __now=self.now())
+        event(*args, **kwargs)
 
     def stop(self) -> None:
         """
@@ -232,11 +258,34 @@ class Simulator(Named):
         """
         return self._is_running
 
-    def _switch(self) -> None:
+    def _clear(self) -> None:
         """
-        Gives control back to the simulator. Meant to be called from a process greenlet.
+        Resets the internal state of the simulator, and sets the simulated clock back to 0.0. This discards all
+        outstanding events and tears down hanging process instances.
         """
-        self._gr.switch()
+        for _, event, _, _ in self.events():
+            if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
+                event.__self__.throw()                                              # type: ignore
+        self._events.clear()
+        self._ts_now = 0.0
+
+    def __enter__(self) -> "Simulator":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type],
+        exc_value: Optional[Exception],
+        traceback: Optional[TracebackType]
+    ) -> bool:
+        self._clear()
+        return False
+
+    def __del__(self) -> None:
+        """
+        Destructor: kill all outstanding processes so that everything gets properly deleted.
+        """
+        self._clear()
 
 
 class _TreeLocalParam(object):
@@ -285,7 +334,7 @@ class Process(greenlet.greenlet):
 
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         super().__init__(run, parent)
-        self.sim = sim
+        self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
 
@@ -307,7 +356,7 @@ class Process(greenlet.greenlet):
         """
         if _logger is not None:
             _log(INFO, "Process", self.local.name, "resume")
-        self.sim._schedule(0.0, self.switch)
+        self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
 
 def pause() -> None:
@@ -317,7 +366,7 @@ def pause() -> None:
     """
     if _logger is not None:
         _log(INFO, "Process", local.name, "pause")
-    Process.current().sim._switch()
+    Process.current().rsim()._gr.switch()  # type: ignore
 
 
 def advance(delay: float) -> None:
@@ -328,34 +377,35 @@ def advance(delay: float) -> None:
     if _logger is not None:
         _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
-    curr.sim._schedule(delay, curr.switch)
-    curr.sim._switch()
+    rsim = curr.rsim
+    rsim()._schedule(delay, curr.switch)  # type: ignore
+    rsim()._gr.switch()                   # type: ignore
 
 
 def now() -> float:
     """
     Returns current simulated time to the running process.
     """
-    return Process.current().sim.now()
+    return Process.current().rsim().now()  # type: ignore
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add(proc, *args, **kwargs)
+    return Process.current().rsim().add(proc, *args, **kwargs)  # type: ignore
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add_in(delay, proc, *args, **kwargs)
+    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)  # type: ignore
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().sim.add_at(moment, proc, *args, **kwargs)
+    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)  # type: ignore
 
 
 def stop() -> None:
     """
     Stops the ongoing simulation, from a process.
     """
-    Process.current().sim.stop()
+    Process.current().rsim().stop()  # type: ignore
 
 
 def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:

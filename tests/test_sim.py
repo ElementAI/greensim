@@ -1,7 +1,9 @@
+import gc
 from itertools import repeat
 import re
 from typing import List, Callable
 
+import greenlet
 import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
@@ -73,6 +75,25 @@ def test_process_advance():
     sim.add(process, ll)
     sim.run()
     assert ll == [0.0, 1.0, 6.0]
+
+
+def test_simulator_step():
+    def process(ll):
+        ll.append(now())
+        advance(1.0)
+        ll.append(now())
+        advance(5.0)
+        ll.append(now())
+
+    ll = []
+    sim = Simulator()
+    sim.add(process, ll)
+    sim.step()
+    assert ll == pytest.approx([0.0])
+    sim.step()
+    assert ll == pytest.approx([0.0, 1.0])
+    sim.step()
+    assert ll == pytest.approx([0.0, 1.0, 6.0])
 
 
 def test_process_multiple():
@@ -571,3 +592,67 @@ def test_resource_release_while_holding_none():
     sim.add(proc, resource)
     with pytest.raises(RuntimeError):
         sim.run()
+
+
+class SimulatorWithDestructor(Simulator):
+
+    def __init__(self, log_destroy):
+        super().__init__()
+        self._log_destroy = log_destroy
+
+    def __del__(self):
+        super().__del__()
+        self._log_destroy.append("sim")
+
+
+@pytest.fixture
+def log_destroy():
+    return []
+
+
+def just_advance(name, delay, log):
+    try:
+        local.name = name
+        advance(delay)
+    except greenlet.GreenletExit:
+        log.append(local.name + " EXIT")
+    finally:
+        log.append(local.name + " finish")
+
+
+def set_up_simulator_with_destructor(log_destroy):
+    sim = SimulatorWithDestructor(log_destroy)
+    sim.add(just_advance, "A", 10.0, log_destroy)
+    sim.add(just_advance, "B", 20.0, log_destroy)
+    sim.add(just_advance, "C", 30.0, log_destroy)
+    sim.add(just_advance, "D", 20.0, log_destroy)
+    return sim
+
+
+def test_simulator_gc_all_proceses_done(log_destroy):
+    sim = set_up_simulator_with_destructor(log_destroy)
+    sim.run()
+    assert len(list(sim.events())) == 0
+    assert log_destroy == ["A finish", "B finish", "D finish", "C finish"]
+    sim = None
+    gc.collect()
+    assert log_destroy == ["A finish", "B finish", "D finish", "C finish", "sim"]
+
+
+def test_simulator_gc_processes_hanging(log_destroy):
+    sim = set_up_simulator_with_destructor(log_destroy)
+    sim.run(15.0)
+    assert len(list(sim.events())) > 0
+    assert log_destroy == ["A finish"]
+    sim = None
+    gc.collect(0)
+    assert log_destroy == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish", "sim"]
+
+
+def test_simulator_context_manager(log_destroy):
+    with set_up_simulator_with_destructor(log_destroy) as sim:
+        sim.run(15.0)
+        assert len(list(sim.events())) > 0
+        assert log_destroy == ["A finish"]
+    # Unsure whether the GC will have reclaimed the Simulator instance yet, but processes *must* have been torn down.
+    assert log_destroy[0:7] == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish"]
