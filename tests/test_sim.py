@@ -7,7 +7,7 @@ import greenlet
 import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
-    Resource, add_in, add_at
+    Resource, add_in, add_at, malware, labeled, LabeledCallable
 
 
 def test_schedule_none():
@@ -646,3 +646,101 @@ def test_simulator_context_manager(log_destroy):
         assert log_destroy == ["A finish"]
     # Unsure whether the GC will have reclaimed the Simulator instance yet, but processes *must* have been torn down.
     assert log_destroy[0:7] == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish"]
+
+
+def test_malware_constructor():
+    @malware("bonnie")
+    def bonnie():
+        pass
+
+    clyde = LabeledCallable(lambda x: x, "clyde", True)
+
+    @labeled("hamer", False)
+    def captain_hamer():
+        pass
+
+    sheriff_jordan = LabeledCallable(lambda x: x, "jordan", False)
+    
+
+    assert bonnie.is_malware and clyde.is_malware
+    assert not (captain_hamer.is_malware or sheriff_jordan.is_malware)
+    assert isinstance(bonnie, Callable)
+    assert isinstance(clyde, Callable)
+    assert bonnie.label == "bonnie"
+    assert clyde.label == "clyde"
+    assert captain_hamer.label == "hamer"
+    assert sheriff_jordan.label == "jordan"
+
+    
+def run_test_labeled_add(labeled_launcher, stop, expected_mal, expected_label):
+    when_last = 0.0
+
+    def last_proc():
+        nonlocal when_last
+        when_last = now()
+        assert expected_mal == Process.current().is_malware
+        assert expected_label == Process.current().label
+
+    sim = Simulator()
+    sim.add(labeled_launcher, last_proc)
+    sim.run()
+    assert pytest.approx(stop) == when_last
+
+    
+def test_labeled_process_add_vanilla():
+
+    step = 25
+    label = "name"
+    
+    @malware(label)
+    def bad_launch(last):
+        advance(step)
+        add(last)
+
+    run_test_labeled_add(bad_launch, step, True, label)
+
+    @labeled(label, False)
+    def good_launch(last):
+        advance(step)
+        add(last)
+
+    run_test_labeled_add(good_launch, step, False, label)
+
+    
+def test_labeled_process_add_in():
+
+    step = 25
+    label = "name"
+    
+    @malware(label)
+    def bad_launch(last):
+        advance(step)
+        add_in(step, last)
+
+    run_test_labeled_add(bad_launch, 2*step, True, label)
+
+    @labeled(label, False)
+    def good_launch(last):
+        advance(step)
+        add_in(step, last)
+
+    run_test_labeled_add(good_launch, 2*step, False, label)
+
+def test_labeled_process_add_at():
+
+    step = 25
+    label = "name"
+    
+    @malware(label)
+    def bad_launch(last):
+        advance(step)
+        add_at(2*step, last)
+
+    run_test_labeled_add(bad_launch, 2*step, True, label)
+
+    @labeled(label, False)
+    def good_launch(last):
+        advance(step)
+        add_at(2*step, last)
+
+    run_test_labeled_add(good_launch, 2*step, False, label)
