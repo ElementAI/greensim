@@ -179,7 +179,7 @@ class Simulator(Named):
 
         See method add() for more details.
         """
-        process = Process(self, fn_process, self._gr)
+        process = Process(self, LabeledCallable.generate_for_callable(fn_process), self._gr)
         if _logger is not None:
             self._log(INFO, "add", __now=self.now(), fn=fn_process, args=args, kwargs=kwargs)
         self._schedule(delay, process.switch, *args, **kwargs)
@@ -337,6 +337,8 @@ class Process(greenlet.greenlet):
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
+        # This should only be passed LabeledCallable internally
+        # Need to check the attributes for backwards compatibility
         if hasattr(run, "is_malware"):
             self._is_malware = getattr(run, "is_malware")
         else:
@@ -378,7 +380,7 @@ class Process(greenlet.greenlet):
     @property
     def label(self) -> str:
         """
-        Returns the label of the underlying process, or None if no name was given
+        Returns the label of the underlying process, either the UUID or what is supplied by _run
         """
         return self._label
 
@@ -414,29 +416,15 @@ def now() -> float:
 
 
 def add(proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add(LabeledCallable(proc,  # type: ignore
-                                                        Process.current().label,
-                                                        Process.current().is_malware),
-                                        *args,
-                                        **kwargs)
+    return Process.current().rsim().add(proc, *args, **kwargs)  # type: ignore
 
 
 def add_in(delay: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_in(delay,  # type: ignore
-                                           LabeledCallable(proc,
-                                                           Process.current().label,
-                                                           Process.current().is_malware),
-                                           *args,
-                                           **kwargs)
+    return Process.current().rsim().add_in(delay, proc, *args, **kwargs)  # type: ignore
 
 
 def add_at(moment: float, proc: Callable, *args: Any, **kwargs: Any) -> Process:
-    return Process.current().rsim().add_at(moment,  # type: ignore
-                                           LabeledCallable(proc,
-                                                           Process.current().label,
-                                                           Process.current().is_malware),
-                                           *args,
-                                           **kwargs)
+    return Process.current().rsim().add_at(moment, proc, *args, **kwargs)  # type: ignore
 
 
 def stop() -> None:
@@ -482,12 +470,12 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
 
 class LabeledCallable(object):
     def __init__(self, event: Callable, label: str, is_malware: bool) -> None:
-        self.event = event
+        self._event = event
         self._label = label
         self._is_malware = is_malware
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.event(*args, **kwargs)
+        return self._event(*args, **kwargs)
 
     @property
     def is_malware(self) -> bool:
@@ -506,6 +494,16 @@ class LabeledCallable(object):
         This will be passed to Processes it generates
         """
         return self._label
+
+    @staticmethod
+    def generate_for_callable(event):
+        if isinstance(event, LabeledCallable):
+            return event
+        try:
+            curr_proc = Process.current()
+            return LabeledCallable(event, curr_proc.label, curr_proc.is_malware)
+        except TypeError:
+            return LabeledCallable(event, str(uuid4()), False)
 
 
 def labeled(label: str, is_malware: bool) -> Callable:

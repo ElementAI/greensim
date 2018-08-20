@@ -744,3 +744,31 @@ def test_labeled_process_add_at():
         add_at(2 * step, last)
 
     run_test_labeled_add(good_launch, 2 * step, False, label)
+
+
+# Case 1: Passed a LabeledCallable
+def test_labeled_callable_generation_copy():
+    hand_made = LabeledCallable(lambda: 0, "NiceCallable", True)
+    copy_cat = LabeledCallable.generate_for_callable(hand_made)
+    assert copy_cat.label == hand_made.label
+    assert copy_cat.is_malware == hand_made.is_malware
+
+
+# Case 2: Process.current() returns TypeError
+def test_labeled_callable_generation_new():
+    default = LabeledCallable.generate_for_callable(lambda: 0)
+    # No check for name since it is generated
+    assert not default.is_malware
+
+
+# Case 3: Process.current() exists
+def test_labeled_callable_generation_extension():
+    sim = Simulator()
+
+    def experimentor():
+        guinea_pig = LabeledCallable.generate_for_callable(lambda: 0)
+        assert guinea_pig.label == Process.current().label
+        assert guinea_pig.is_malware == Process.current().is_malware
+
+    sim.add(experimentor)
+    sim.run()
