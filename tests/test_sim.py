@@ -7,7 +7,15 @@ import greenlet
 import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
-    Resource, add_in, add_at, malware, labeled, LabeledCallable
+    Resource, add_in, add_at, tagged
+from greensim.tags import GreensimTag
+
+
+class TestTag(GreensimTag):
+    # Prevent Pytest from complaining
+    __test__ = False
+    ALICE = 0
+    BOB = "BOB"
 
 
 def test_schedule_none():
@@ -226,6 +234,17 @@ def test_getting_current_process():
 
     with pytest.raises(TypeError):
         proc()
+
+
+def test_probing_current_process():
+    def proc():
+        assert Process.current_exists()
+
+    assert not Process.current_exists()
+    sim = Simulator()
+    sim.add(proc)
+    sim.run()
+    assert not Process.current_exists()
 
 
 def test_process_adding_process():
@@ -648,127 +667,79 @@ def test_simulator_context_manager(log_destroy):
     assert log_destroy[0:7] == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish"]
 
 
-def test_malware_constructor():
-    @malware("bonnie")
-    def bonnie():
+def test_tagged_constructor():
+    @tagged([TestTag.ALICE])
+    def f():
         pass
 
-    clyde = LabeledCallable(lambda x: x, "clyde", True)
-
-    @labeled("hamer", False)
-    def captain_hamer():
-        pass
-
-    sheriff_jordan = LabeledCallable(lambda x: x, "jordan", False)
-
-    assert bonnie.is_malware and clyde.is_malware
-    assert not (captain_hamer.is_malware or sheriff_jordan.is_malware)
-    assert isinstance(bonnie, Callable)
-    assert isinstance(clyde, Callable)
-    assert bonnie.label == "bonnie"
-    assert clyde.label == "clyde"
-    assert captain_hamer.label == "hamer"
-    assert sheriff_jordan.label == "jordan"
+    proc = Process(Simulator(), f, None)
+    assert proc.match(TestTag.ALICE)
 
 
-def run_test_labeled_add(labeled_launcher, stop, expected_mal, expected_label):
+def run_test_tagged_add(tagged_launcher, stop):
     when_last = 0.0
 
     def last_proc():
         nonlocal when_last
         when_last = now()
-        assert expected_mal == Process.current().is_malware
-        assert expected_label == Process.current().label
+        assert Process.current().match(TestTag.ALICE)
 
     sim = Simulator()
-    sim.add(labeled_launcher, last_proc)
+    sim.add(tagged_launcher, last_proc)
     sim.run()
     assert pytest.approx(stop) == when_last
 
 
-def test_labeled_process_add_vanilla():
+def run_test_tagged_add_extra_tag(tagged_launcher, stop):
+    when_last = 0.0
 
-    step = 25
-    label = "name"
+    @tagged([TestTag.BOB])
+    def last_proc():
+        nonlocal when_last
+        when_last = now()
+        assert Process.current().match(TestTag.ALICE)
+        assert Process.current().match(TestTag.BOB)
 
-    @malware(label)
-    def bad_launch(last):
-        advance(step)
-        add(last)
-
-    run_test_labeled_add(bad_launch, step, True, label)
-
-    @labeled(label, False)
-    def good_launch(last):
-        advance(step)
-        add(last)
-
-    run_test_labeled_add(good_launch, step, False, label)
-
-
-def test_labeled_process_add_in():
-
-    step = 25
-    label = "name"
-
-    @malware(label)
-    def bad_launch(last):
-        advance(step)
-        add_in(step, last)
-
-    run_test_labeled_add(bad_launch, 2 * step, True, label)
-
-    @labeled(label, False)
-    def good_launch(last):
-        advance(step)
-        add_in(step, last)
-
-    run_test_labeled_add(good_launch, 2 * step, False, label)
-
-
-def test_labeled_process_add_at():
-
-    step = 25
-    label = "name"
-
-    @malware(label)
-    def bad_launch(last):
-        advance(step)
-        add_at(2 * step, last)
-
-    run_test_labeled_add(bad_launch, 2 * step, True, label)
-
-    @labeled(label, False)
-    def good_launch(last):
-        advance(step)
-        add_at(2 * step, last)
-
-    run_test_labeled_add(good_launch, 2 * step, False, label)
-
-
-# Case 1: Passed a LabeledCallable
-def test_labeled_callable_generation_copy():
-    hand_made = LabeledCallable(lambda: 0, "NiceCallable", True)
-    copy_cat = LabeledCallable.generate_for_callable(hand_made)
-    assert copy_cat.label == hand_made.label
-    assert copy_cat.is_malware == hand_made.is_malware
-
-
-# Case 2: Process.current() returns TypeError
-def test_labeled_callable_generation_new():
-    default = LabeledCallable.generate_for_callable(lambda: 0)
-    # No check for name since it is generated
-    assert not default.is_malware
-
-
-# Case 3: Process.current() exists
-def test_labeled_callable_generation_extension():
     sim = Simulator()
-
-    def experimentor():
-        guinea_pig = LabeledCallable.generate_for_callable(lambda: 0)
-        assert guinea_pig.label == Process.current().label
-        assert guinea_pig.is_malware == Process.current().is_malware
-
-    sim.add(experimentor)
+    sim.add(tagged_launcher, last_proc)
     sim.run()
+    assert pytest.approx(stop) == when_last
+
+
+def test_tagged_process_add_vanilla():
+
+    step = 25
+
+    @tagged([TestTag.ALICE])
+    def good_launch(last):
+        advance(step)
+        add(last)
+
+    run_test_tagged_add(good_launch, step)
+    run_test_tagged_add_extra_tag(good_launch, step)
+
+
+def test_tagged_process_add_in():
+
+    step = 25
+
+    @tagged([TestTag.ALICE])
+    def good_launch(last):
+        advance(step)
+        add_in(step, last)
+
+    run_test_tagged_add(good_launch, 2 * step)
+    run_test_tagged_add_extra_tag(good_launch, 2 * step)
+
+
+def test_tagged_process_add_at():
+
+    step = 25
+
+    @tagged([TestTag.ALICE])
+    def good_launch(last):
+        advance(step)
+        add_at(2 * step, last)
+
+    run_test_tagged_add(good_launch, 2 * step)
+    run_test_tagged_add_extra_tag(good_launch, 2 * step)
