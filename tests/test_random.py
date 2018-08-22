@@ -25,10 +25,7 @@ def check_vr(vr, expected, num=5):
         def ident(n):
             return n
         approx = ident
-    # New in pytest 3.7
-    if len(expected) > 0 and isinstance(expected[0], float):
-        expected = approx(expected)
-    assert expected == [v for _, v in takewhile(lambda p: p[0] < num, enumerate(vr))]
+    assert approx(expected) == [v for _, v in takewhile(lambda p: p[0] < num, enumerate(vr))]
 
 
 def test_constant():
