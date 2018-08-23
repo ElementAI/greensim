@@ -7,7 +7,15 @@ import greenlet
 import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
-    Resource, add_in, add_at
+    Resource, add_in, add_at, tagged
+from greensim.tags import Tags
+
+
+class TestTag(Tags):
+    # Prevent Pytest from complaining
+    __test__ = False
+    ALICE = 0
+    BOB = "BOB"
 
 
 def test_schedule_none():
@@ -226,6 +234,17 @@ def test_getting_current_process():
 
     with pytest.raises(TypeError):
         proc()
+
+
+def test_probing_current_process():
+    def proc():
+        assert Process.current_exists()
+
+    assert not Process.current_exists()
+    sim = Simulator()
+    sim.add(proc)
+    sim.run()
+    assert not Process.current_exists()
 
 
 def test_process_adding_process():
@@ -646,3 +665,81 @@ def test_simulator_context_manager(log_destroy):
         assert log_destroy == ["A finish"]
     # Unsure whether the GC will have reclaimed the Simulator instance yet, but processes *must* have been torn down.
     assert log_destroy[0:7] == ["A finish", "B EXIT", "B finish", "D EXIT", "D finish", "C EXIT", "C finish"]
+
+
+def test_tagged_constructor():
+    @tagged(TestTag.ALICE)
+    def f():
+        pass
+
+    proc = Process(Simulator(), f, None)
+    assert proc.has_tag(TestTag.ALICE)
+
+
+def run_test_tagged_add(tagged_launcher, stop):
+    when_last = 0.0
+
+    def last_proc():
+        nonlocal when_last
+        when_last = now()
+        assert Process.current().has_tag(TestTag.ALICE)
+
+    sim = Simulator()
+    sim.add(tagged_launcher, last_proc)
+    sim.run()
+    assert pytest.approx(stop) == when_last
+
+
+def run_test_tagged_add_extra_tag(tagged_launcher, stop):
+    when_last = 0.0
+
+    @tagged(TestTag.BOB)
+    def last_proc():
+        nonlocal when_last
+        when_last = now()
+        assert Process.current().has_tag(TestTag.ALICE)
+        assert Process.current().has_tag(TestTag.BOB)
+
+    sim = Simulator()
+    sim.add(tagged_launcher, last_proc)
+    sim.run()
+    assert pytest.approx(stop) == when_last
+
+
+def test_tagged_process_add_vanilla():
+
+    step = 25
+
+    @tagged(TestTag.ALICE)
+    def good_launch(last):
+        advance(step)
+        add(last)
+
+    run_test_tagged_add(good_launch, step)
+    run_test_tagged_add_extra_tag(good_launch, step)
+
+
+def test_tagged_process_add_in():
+
+    step = 25
+
+    @tagged(TestTag.ALICE)
+    def good_launch(last):
+        advance(step)
+        add_in(step, last)
+
+    run_test_tagged_add(good_launch, 2 * step)
+    run_test_tagged_add_extra_tag(good_launch, 2 * step)
+
+
+def test_tagged_process_add_at():
+
+    step = 25
+
+    @tagged(TestTag.ALICE)
+    def good_launch(last):
+        advance(step)
+        add_at(2 * step, last)
+
+    run_test_tagged_add(good_launch, 2 * step)
+    run_test_tagged_add_extra_tag(good_launch, 2 * step)

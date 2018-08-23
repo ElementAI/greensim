@@ -13,6 +13,9 @@ import weakref
 
 import greenlet
 
+from greensim.tags import Tags, TaggedObject
+
+GREENSIM_TAG_ATTRIBUTE = "_greensim_tag_set"
 
 # Disable auto-logging by default: it bears a significant weight on performance. Auto-logging will be toggled using
 # enable_logging() and disable_logging().
@@ -320,7 +323,7 @@ class _TreeLocalParamCurrent(_TreeLocalParam):
 local = _TreeLocalParamCurrent()
 
 
-class Process(greenlet.greenlet):
+class Process(greenlet.greenlet, TaggedObject):
     """
     Processes are green threads transparently used to mix the concurrent execution of multiple functions that generate
     trains of events. A simulation's writer typically does not have to care for processes: their management is
@@ -333,10 +336,20 @@ class Process(greenlet.greenlet):
     """
 
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
-        super().__init__(run, parent)
+        global GREENSIM_TAG_ATTRIBUTE
+        # Ignore type since Python correctly calls greenlet.greenlet.__init__(),
+        # but the type checker compares to TaggedObject.__init__()
+        super().__init__(run, parent)  # type: ignore
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
+
+        # Collect tags from the process spawning this one, and anything attached to the function
+        if Process.current_exists():
+            self.tag_with(*Process.current()._tag_set)
+
+        if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
+            self.tag_with(getattr(run, GREENSIM_TAG_ATTRIBUTE))
 
     @staticmethod
     def current() -> 'Process':
@@ -347,6 +360,13 @@ class Process(greenlet.greenlet):
         if not isinstance(curr, Process):
             raise TypeError("Current greenlet does not correspond to a Process instance.")
         return cast(Process, greenlet.getcurrent())
+
+    @staticmethod
+    def current_exists() -> bool:
+        """
+        Convenience method to allow conditional logic without try-except
+        """
+        return isinstance(greenlet.getcurrent(), Process)
 
     def resume(self) -> None:
         """
@@ -439,6 +459,18 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
                 advance(interval)
                 add(event, *args_event, **kwargs_event)
         return make_happen
+    return hook
+
+
+def tagged(*tag_set: Tags) -> Callable:
+    global GREENSIM_TAG_ATTRIBUTE
+    """
+    Decorator for adding a label to the process.
+    These labels are applied to any child Processes produced by event
+    """
+    def hook(event: Callable):
+        setattr(event, GREENSIM_TAG_ATTRIBUTE, *tag_set)
+        return event
     return hook
 
 
