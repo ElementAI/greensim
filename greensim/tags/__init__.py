@@ -1,12 +1,11 @@
-from enum import Enum, unique
-from typing import Iterable, Set
+from enum import Enum
+from typing import Iterator, Set
 
 
-@unique
-class GreensimTag(Enum):
+# This class should remain empty so that it can be subclassed by users
+class Tags(Enum):
     """
     Empty superclass for Enums containing custom tags for Greensim TaggedObject's
-    The @unique decorator is applied so labels are all distinct
     """
     pass
 
@@ -15,54 +14,41 @@ class TaggedObject(object):
     """
     Provides standardized methods for managing tags on generic objects
 
-    Tags can be created by extending the GreensimTag class, which is an Enum
+    Tags can be created by extending the Tags class, which is an Enum
 
     Methods on this class are all wrappers around standard Python set() methods
     """
 
     # Use a set since tags are order-independant and should be unique
-    _tag_set: Set[GreensimTag] = set()
+    _tag_set: Set[Tags] = set()
 
-    def __init__(self, tag_set: Iterable[GreensimTag] = []) -> None:
+    def __init__(self, *tag_set: Tags) -> None:
         self._tag_set = set(tag_set)
 
-    @property
-    def tag_set(self) -> Set[GreensimTag]:
-        return self._tag_set
+    def iter_tags(self) -> Iterator[Tags]:
+        return iter(self._tag_set)
 
-    def match(self, needle: GreensimTag) -> bool:
+    def has_tag(self, needle: Tags) -> bool:
         """
         Applies the "in" operator to search for the argument in the set of tags
         """
         return needle in self._tag_set
 
-    def apply(self, new_tag: GreensimTag) -> None:
-        """
-        Convenience method to apply one tag with apply_set
-        """
-        self.apply_set([new_tag])
-
-    def apply_set(self, new_tags: Iterable[GreensimTag]) -> None:
+    def tag_with(self, *new_tags: Tags) -> None:
         """
         Take the union of the current tags and the tags in the argument,
         make the union the new set of tags for this object
         """
-        self._tag_set = self._tag_set.union(set(new_tags))
+        self._tag_set |= set(new_tags)
 
-    def remove(self, drop_tag: GreensimTag) -> None:
-        """
-        Convenience method to remove one tag with remove_set
-        """
-        self.remove_set([drop_tag])
-
-    def remove_set(self, drop_tags: Iterable[GreensimTag]) -> None:
+    def untag(self, *drop_tags: Tags) -> None:
         """
         Take the difference of the current tags and the tags in the argument,
         make the difference the new set of tags for this object
         """
-        self._tag_set = self._tag_set.difference(set(drop_tags))
+        self._tag_set -= set(drop_tags)
 
-    def clear(self) -> None:
+    def clear_tags(self) -> None:
         """
         Remove all tags
         """

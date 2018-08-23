@@ -8,10 +8,10 @@ import pytest
 
 from greensim import Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, select, \
     Resource, add_in, add_at, tagged
-from greensim.tags import GreensimTag
+from greensim.tags import Tags
 
 
-class TestTag(GreensimTag):
+class TestTag(Tags):
     # Prevent Pytest from complaining
     __test__ = False
     ALICE = 0
@@ -668,12 +668,12 @@ def test_simulator_context_manager(log_destroy):
 
 
 def test_tagged_constructor():
-    @tagged([TestTag.ALICE])
+    @tagged(TestTag.ALICE)
     def f():
         pass
 
     proc = Process(Simulator(), f, None)
-    assert proc.match(TestTag.ALICE)
+    assert proc.has_tag(TestTag.ALICE)
 
 
 def run_test_tagged_add(tagged_launcher, stop):
@@ -682,7 +682,7 @@ def run_test_tagged_add(tagged_launcher, stop):
     def last_proc():
         nonlocal when_last
         when_last = now()
-        assert Process.current().match(TestTag.ALICE)
+        assert Process.current().has_tag(TestTag.ALICE)
 
     sim = Simulator()
     sim.add(tagged_launcher, last_proc)
@@ -693,12 +693,12 @@ def run_test_tagged_add(tagged_launcher, stop):
 def run_test_tagged_add_extra_tag(tagged_launcher, stop):
     when_last = 0.0
 
-    @tagged([TestTag.BOB])
+    @tagged(TestTag.BOB)
     def last_proc():
         nonlocal when_last
         when_last = now()
-        assert Process.current().match(TestTag.ALICE)
-        assert Process.current().match(TestTag.BOB)
+        assert Process.current().has_tag(TestTag.ALICE)
+        assert Process.current().has_tag(TestTag.BOB)
 
     sim = Simulator()
     sim.add(tagged_launcher, last_proc)
@@ -710,7 +710,7 @@ def test_tagged_process_add_vanilla():
 
     step = 25
 
-    @tagged([TestTag.ALICE])
+    @tagged(TestTag.ALICE)
     def good_launch(last):
         advance(step)
         add(last)
@@ -723,7 +723,7 @@ def test_tagged_process_add_in():
 
     step = 25
 
-    @tagged([TestTag.ALICE])
+    @tagged(TestTag.ALICE)
     def good_launch(last):
         advance(step)
         add_in(step, last)
@@ -736,7 +736,7 @@ def test_tagged_process_add_at():
 
     step = 25
 
-    @tagged([TestTag.ALICE])
+    @tagged(TestTag.ALICE)
     def good_launch(last):
         advance(step)
         add_at(2 * step, last)

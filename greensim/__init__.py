@@ -13,7 +13,7 @@ import weakref
 
 import greenlet
 
-from greensim.tags import GreensimTag, TaggedObject
+from greensim.tags import Tags, TaggedObject
 
 GREENSIM_TAG_ATTRIBUTE = "_greensim_tag_set"
 
@@ -346,10 +346,10 @@ class Process(greenlet.greenlet, TaggedObject):
 
         # Collect tags from the process spawning this one, and anything attached to the function
         if Process.current_exists():
-            self.apply_set(Process.current()._tag_set)
+            self.tag_with(*Process.current()._tag_set)
 
         if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
-            self.apply_set(getattr(run, GREENSIM_TAG_ATTRIBUTE))
+            self.tag_with(getattr(run, GREENSIM_TAG_ATTRIBUTE))
 
     @staticmethod
     def current() -> 'Process':
@@ -462,14 +462,14 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     return hook
 
 
-def tagged(tag_set: Iterable[GreensimTag]) -> Callable:
+def tagged(*tag_set: Tags) -> Callable:
     global GREENSIM_TAG_ATTRIBUTE
     """
     Decorator for adding a label to the process.
     These labels are applied to any child Processes produced by event
     """
     def hook(event: Callable):
-        setattr(event, GREENSIM_TAG_ATTRIBUTE, tag_set)
+        setattr(event, GREENSIM_TAG_ATTRIBUTE, *tag_set)
         return event
     return hook
 
