@@ -15,7 +15,7 @@ import greenlet
 
 from greensim.tags import Tags, TaggedObject
 
-GREENSIM_TAG_ATTRIBUTE = "_greensim_tag_set"
+GREENSIM_TAG_ATTRIBUTE = "_greensim_tags"
 
 # Disable auto-logging by default: it bears a significant weight on performance. Auto-logging will be toggled using
 # enable_logging() and disable_logging().
@@ -468,14 +468,14 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     return hook
 
 
-def tagged(*tag_set: Tags) -> Callable:
+def tagged(*tags: Tags) -> Callable:
     global GREENSIM_TAG_ATTRIBUTE
     """
     Decorator for adding a label to the process.
     These labels are applied to any child Processes produced by event
     """
     def hook(event: Callable):
-        setattr(event, GREENSIM_TAG_ATTRIBUTE, tag_set)
+        setattr(event, GREENSIM_TAG_ATTRIBUTE, tags)
         return event
     return hook
 

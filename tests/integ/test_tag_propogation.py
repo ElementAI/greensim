@@ -49,7 +49,6 @@ sim = Simulator()
 # The returned function takes the tags of the argument function
 def create_time_check(delay, fn):
     def time_check(*args, **kwargs):
-        nonlocal delay, fn
         assert delay == now()
         fn(*args, **kwargs)
 
