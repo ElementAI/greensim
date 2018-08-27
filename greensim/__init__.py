@@ -15,7 +15,7 @@ import greenlet
 
 from greensim.tags import Tags, TaggedObject
 
-GREENSIM_TAG_ATTRIBUTE = "_greensim_tag_set"
+GREENSIM_TAG_ATTRIBUTE = "_greensim_tags"
 
 # Disable auto-logging by default: it bears a significant weight on performance. Auto-logging will be toggled using
 # enable_logging() and disable_logging().
@@ -347,9 +347,15 @@ class Process(greenlet.greenlet, TaggedObject):
         # Collect tags from the process spawning this one, and anything attached to the function
         if Process.current_exists():
             self.tag_with(*Process.current()._tag_set)
+        # Due to the way Greenlets are reused in memory, tags can persist across simulations
+        # This makes sure that the Process is fresh if a simulation is not current running
+        # Moving this outside the else statement will cause it to wipe tags from the currently
+        # running process, if one exists. This will require further research
+        else:
+            self.clear_tags()
 
         if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
-            self.tag_with(getattr(run, GREENSIM_TAG_ATTRIBUTE))
+            self.tag_with(*getattr(run, GREENSIM_TAG_ATTRIBUTE))
 
     @staticmethod
     def current() -> 'Process':
@@ -462,14 +468,14 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     return hook
 
 
-def tagged(*tag_set: Tags) -> Callable:
+def tagged(*tags: Tags) -> Callable:
     global GREENSIM_TAG_ATTRIBUTE
     """
     Decorator for adding a label to the process.
     These labels are applied to any child Processes produced by event
     """
     def hook(event: Callable):
-        setattr(event, GREENSIM_TAG_ATTRIBUTE, *tag_set)
+        setattr(event, GREENSIM_TAG_ATTRIBUTE, tags)
         return event
     return hook
 
