@@ -676,6 +676,16 @@ def test_tagged_constructor():
     assert proc.has_tag(TestTag.ALICE)
 
 
+def test_tagged_constructor_multi():
+    @tagged(TestTag.ALICE, TestTag.BOB)
+    def f():
+        pass
+
+    proc = Process(Simulator(), f, None)
+    assert proc.has_tag(TestTag.ALICE)
+    assert proc.has_tag(TestTag.BOB)
+
+
 def run_test_tagged_add(tagged_launcher, stop):
     when_last = 0.0
 
