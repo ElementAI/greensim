@@ -45,7 +45,7 @@ I'm from A
 
 See: https://docs.python.org/3.7/reference/datamodel.html?highlight=metaclass#implementing-descriptors
 
-Notice how above, the instance `B()` does not normally have access to `message`, but by giving the `__get__` method an instance `A()`, which does have `message`, the method `print_message` from `B` was returned, bound to the scope of the `A()` instance. Thus, when it was called, the instance `A()` was used as the scope and the `message` variable was readily accessed. The `print(self.__class__)` call is used to prove that the method is running on the `A()` instance (since the result is `<class '__main__.A'>`), as opposed to giving the `B` object access to the `message` variable
+Notice how above, the instance `B()` does not have access to `message`, but by giving the `__get__` method an instance `A()`, which does have `message`, the method `print_message` from `B` was returned, bound to the scope of the `A()` instance. Thus, when it was called, the instance `A()` was used as the scope and the `message` variable was readily accessed. The `print(self.__class__)` call is used to prove that the method is running on the `A()` instance (since the result is `<class '__main__.A'>`), as opposed to giving the `B` object access to the `message` variable.
 
 This pattern is used by the `super()` method to bind the `__init__` of the parent class to the context of the child, and can be used directly by the programmer if desired:
 
@@ -72,39 +72,32 @@ Living in an A
 True
 ```
 
-See: https://docs.python.org/3.7/reference/datamodel.html?highlight=metaclass#invoking-descriptors
+See "Super Binding": https://docs.python.org/3.7/reference/datamodel.html?highlight=metaclass#invoking-descriptors
 
 This is typically not necessary, but in the case of multiple inheritance it has the benefit of directly specifying the `__init__` method that should be called, rather than letting Python search `__mro__` with its own pattern. This is used in the `Process` constructor in order to make sure that both the constructors for `greenlet.greenlet` and `TaggedObject` are called, since without both calls the `Process` object would be improperly initialized and unusual behavior would result.
 
 The reason this was required was that a bug emerged where Tags would persist across `Process` objects in unexpected ways. This was patched incorrectly in https://github.com/ElementAI/greensim/commit/3dd1a50c00002703de825577c49cae256bd91644
 
-As it turns out, if the super class is not properly initialized, it can persist values across multiple instantiations of its subclasses. An example is provided below.
+As it turns out, if the a class is not properly initialized, it can persist values across multiple instantiations of itself (and therefore its subclasses). An example is provided below.
 
 ```
 >>> class A(object):
+...     a = set()
 ...     def update(self):
-...         self.a = 1
+...         self.a |= set([1])
 ... 
->>> class B(A):
-...     def call_update(self):
-...         self.update()
-...     def print_a(self):
-...         print(self.a)
-... 
->>> b = B()
->>> b.print_a()
-Traceback (most recent call last):
-  File "<stdin>", line 1, in <module>
-  File "<stdin>", line 5, in print_a
-AttributeError: 'B' object has no attribute 'a'
->>> b.call_update()
->>> b.print_a()
-1
->>> bb = B()
->>> b.print_a()
-1
+>>> a = A()
+>>> a.a
+set()
+>>> a.update()
+>>> a.a
+{1}
+>>> aa = A()
+>>> aa.a
+{1}
 ```
 
+This seems to be a corner case for the interpreter, since changing the `|=` to a `=` or changing the line to `self.a = self.a | set([1])`, which should be equivalent, both prevent the unusual behavior (i.e., the last line of output is `set()`, not `{1}`).
 
 Other reading:
 
