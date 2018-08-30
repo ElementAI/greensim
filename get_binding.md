@@ -76,6 +76,35 @@ See: https://docs.python.org/3.7/reference/datamodel.html?highlight=metaclass#in
 
 This is typically not necessary, but in the case of multiple inheritance it has the benefit of directly specifying the `__init__` method that should be called, rather than letting Python search `__mro__` with its own pattern. This is used in the `Process` constructor in order to make sure that both the constructors for `greenlet.greenlet` and `TaggedObject` are called, since without both calls the `Process` object would be improperly initialized and unusual behavior would result.
 
+The reason this was required was that a bug emerged where Tags would persist across `Process` objects in unexpected ways. This was patched incorrectly in https://github.com/ElementAI/greensim/commit/3dd1a50c00002703de825577c49cae256bd91644
+
+As it turns out, if the super class is not properly initialized, it can persist values across multiple instantiations of its subclasses. An example is provided below.
+
+```
+>>> class A(object):
+...     def update(self):
+...         self.a = 1
+... 
+>>> class B(A):
+...     def call_update(self):
+...         self.update()
+...     def print_a(self):
+...         print(self.a)
+... 
+>>> b = B()
+>>> b.print_a()
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "<stdin>", line 5, in print_a
+AttributeError: 'B' object has no attribute 'a'
+>>> b.call_update()
+>>> b.print_a()
+1
+>>> bb = B()
+>>> b.print_a()
+1
+```
+
 
 Other reading:
 
