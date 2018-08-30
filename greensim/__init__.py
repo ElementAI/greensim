@@ -475,8 +475,10 @@ def tagged(*tags: Tags) -> Callable:
     These labels are applied to any child Processes produced by event
     """
     def hook(event: Callable):
-        setattr(event, GREENSIM_TAG_ATTRIBUTE, tags)
-        return event
+        def wrapper(*args, **kwargs):
+            event(*args, **kwargs)
+        setattr(wrapper, GREENSIM_TAG_ATTRIBUTE, tags)
+        return wrapper
     return hook
 
 
