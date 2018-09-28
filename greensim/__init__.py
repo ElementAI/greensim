@@ -15,7 +15,7 @@ import greenlet
 
 from greensim.tags import Tags, TaggedObject
 
-GREENSIM_TAG_ATTRIBUTE = "_greensim_tag_set"
+GREENSIM_TAG_ATTRIBUTE = "_greensim_tags"
 
 # Disable auto-logging by default: it bears a significant weight on performance. Auto-logging will be toggled using
 # enable_logging() and disable_logging().
@@ -333,23 +333,45 @@ class Process(greenlet.greenlet, TaggedObject):
 
     Through their `local` public data member, processes may store arbitrary values that can be then manipulated by other
     processes (no risk of race condition). This is useful for implementing non-trivial queue disciplines, for instance.
+
+    For a description of why the _bind_and_call_constructor method is necessary and what it does, see get_binding.md
     """
 
     def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
         global GREENSIM_TAG_ATTRIBUTE
-        # Ignore type since Python correctly calls greenlet.greenlet.__init__(),
-        # but the type checker compares to TaggedObject.__init__()
-        super().__init__(run, parent)  # type: ignore
+        self._bind_and_call_constructor(TaggedObject)
+        self._bind_and_call_constructor(greenlet.greenlet, run, parent)
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
-
         # Collect tags from the process spawning this one, and anything attached to the function
         if Process.current_exists():
             self.tag_with(*Process.current()._tag_set)
 
         if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
-            self.tag_with(getattr(run, GREENSIM_TAG_ATTRIBUTE))
+            self.tag_with(*getattr(run, GREENSIM_TAG_ATTRIBUTE))
+
+    def _bind_and_call_constructor(self, t: type, *args) -> None:
+        """
+        Accesses the __init__ method of a type directly and calls it with *args
+
+        This allows the constructors of both superclasses to be called, as described in get_binding.md
+
+        This could be done using two calls to super() with a hack based on how Python searches __mro__:
+
+        ```
+        super().__init__(run, parent) # calls greenlet.greenlet.__init__
+        super(greenlet.greenlet, self).__init__() # calls TaggedObject.__init__
+        ```
+
+        Python will always find greenlet.greenlet first since it is specified first, but will ignore it if it is
+        the first argument to super, which is meant to indicate the subclass and thus is not meant to be called on
+
+        See: https://docs.python.org/3.7/library/functions.html#super
+
+        This is indirect, confusing, and not in following with the purpose of super(), so the direct method was used
+        """
+        t.__init__.__get__(self)(*args)  # type: ignore
 
     @staticmethod
     def current() -> 'Process':
@@ -462,15 +484,17 @@ def happens(intervals: Iterable[float], name: Optional[str] = None) -> Callable:
     return hook
 
 
-def tagged(*tag_set: Tags) -> Callable:
+def tagged(*tags: Tags) -> Callable:
     global GREENSIM_TAG_ATTRIBUTE
     """
     Decorator for adding a label to the process.
     These labels are applied to any child Processes produced by event
     """
     def hook(event: Callable):
-        setattr(event, GREENSIM_TAG_ATTRIBUTE, *tag_set)
-        return event
+        def wrapper(*args, **kwargs):
+            event(*args, **kwargs)
+        setattr(wrapper, GREENSIM_TAG_ATTRIBUTE, tags)
+        return wrapper
     return hook
 
 
