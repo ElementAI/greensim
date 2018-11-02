@@ -56,7 +56,7 @@ def test_combine():
 
 
 def has_tracker(sim, tracker):
-    return any(event == tracker.switch for _, event, _, _ in sim.events())
+    return any(event == tracker.switch for _, _, event, _, _ in sim.events())
 
 
 def test_tracker_lifecycle():

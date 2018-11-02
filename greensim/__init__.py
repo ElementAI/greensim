@@ -71,6 +71,85 @@ class Named(object):
         _log(level, type(self).__name__, self.name, event, **params)
 
 
+class Interrupt(Exception):
+    """
+    Raised on a :py:class:`Process` instance through the :py:meth:`Process.interrupt` method, so it resumes its
+    execution without having advanced in time as much as it expected, or having fulfilled the condition is hoped to
+    satisfy by going into pause.
+    """
+    pass
+
+
+class _Event(object):
+    """
+    Event on a simulation timeline.
+    """
+
+    def __init__(self, timestamp: float, identifier: int, event: Callable, *args: Any, **kwargs: Any) -> None:
+        super().__init__()
+        self._timestamp = timestamp
+        self._identifier = identifier
+        self._is_cancelled = False
+        self._event = event
+        self._args = args
+        self._kwargs = kwargs
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Event) and \
+            self._timestamp == other._timestamp and \
+            self._identifier == other._identifier and \
+            self.fn == other.fn and \
+            self.args == other.args and \
+            self.kwargs == other.kwargs
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, _Event):
+            return False
+        return (self._timestamp, self._identifier) < (other._timestamp, other._identifier)
+
+    @property
+    def timestamp(self) -> float:
+        return self._timestamp
+
+    @property
+    def identifier(self) -> int:
+        return self._identifier
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._is_cancelled
+
+    @property
+    def fn(self) -> Callable:
+        return self._event
+
+    @property
+    def args(self) -> Sequence[Any]:
+        return self._args
+
+    @property
+    def kwargs(self) -> Mapping[str, Any]:
+        return self._kwargs
+
+    def cancel(self) -> None:
+        """
+        Cancels this event, so that its execution will no-op.
+        """
+        self._is_cancelled = True
+
+    def execute(self, sim: "Simulator") -> None:
+        """
+        Executes the event, unless it was cancelled.
+        """
+        if self._is_cancelled:
+            if _logger is not None:
+                _log(DEBUG, "Simulator", sim.name, "discard-event", counter=self._identifier, __now=self._timestamp)
+        else:
+            if _logger is not None:
+                _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self._identifier, __now=self._timestamp)
+            self.fn(*self.args, **self.kwargs)
+
+
 class Simulator(Named):
     """
     This class articulates the dynamic sequence of events that composes a discrete event system.  Its use to synchronize
@@ -115,7 +194,7 @@ class Simulator(Named):
         """
         super().__init__(name)
         self._ts_now = ts_now
-        self._events: List[Tuple[float, int, Callable, Tuple, Dict]] = []
+        self._events: List[_Event] = []
         self._is_running = False
         self._counter = 0
         self._gr = greenlet.getcurrent()  # The Simulator's greenlet
@@ -126,15 +205,15 @@ class Simulator(Named):
         """
         return self._ts_now
 
-    def events(self) -> Iterable[Tuple[float, Callable, Sequence, Mapping]]:
+    def events(self) -> Iterable[Tuple[float, bool, Callable, Sequence[Any], Mapping[str, Any]]]:
         """
         Iterates over scheduled events. Each event is a 4-tuple composed of the moment (on the simulated clock) the
         event should execute, the function corresponding to the event, its positional parameters (as a tuple of
         arbitrary length), and its keyword parameters (as a dictionary).
         """
-        return ((moment, event, args, kwargs) for moment, _, event, args, kwargs in self._events)
+        return ((event.timestamp, event.is_cancelled, event.fn, event.args, event.kwargs) for event in self._events)
 
-    def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> 'Simulator':
+    def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> int:
         """
         Schedules a one-time event to be run along the simulation.  The event is scheduled relative to current simulator
         time, so delay is expected to be a positive simulation time interval. The `event' parameter corresponds to a
@@ -143,8 +222,10 @@ class Simulator(Named):
         evaluated when `_schedule()` is called, not when the event is executed). Once this event function returns, the
         simulation carries on to the next event, or stops if none remain.
 
-        Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
-        and helper functions of this package.
+        Remark that this method is private, and is meant for internal usage by the :py:class:`Simulator` and
+        :py:class:`Process` classes, and helper functions of this module.
+
+        :return: Unique identifier for the scheduled event.
         """
         if _logger is not None:
             self._log(
@@ -163,9 +244,20 @@ class Simulator(Named):
 
         # Use counter to strictly order events happening at the same simulated time. This gives a total order on events,
         # working around the heap queue not yielding a stable ordering.
-        heappush(self._events, (self._ts_now + delay, self._counter, event, args, kwargs))
+        id_event = self._counter
+        heappush(self._events, _Event(self._ts_now + delay, id_event, event, *args, **kwargs))
         self._counter += 1
-        return self
+        return id_event
+
+    def _cancel(self, id_cancel) -> None:
+        """
+        Cancels a previously scheduled event. This method is private, and is meant for internal usage by the
+        :py:class:`Simulator` and :py:class:`Process` classes, and helper functions of this module.
+        """
+        for event in self._events:
+            if event.identifier == id_cancel:
+                event.cancel()
+                break
 
     def add(self, fn_process: Callable, *args: Any, **kwargs: Any) -> 'Process':
         """
@@ -216,10 +308,9 @@ class Simulator(Named):
 
         self._is_running = True
         while self.is_running and len(self._events) > 0:
-            self._ts_now, cnt, event, args, kwargs = heappop(self._events)
-            if _logger is not None:
-                self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
-            event(*args, **kwargs)
+            event = heappop(self._events)
+            self._ts_now = event.timestamp
+            event.execute(self)
 
         if len(self._events) == 0:
             if _logger is not None:
@@ -229,21 +320,20 @@ class Simulator(Named):
         if counter_stop_event is not None:
             # Change the planned stop to a no-op. We would rather eliminate it, but this would force a re-sort of the
             # event queue.
-            for (i, (moment, counter, _, _, _)) in enumerate(self._events):
-                if counter == counter_stop_event:
+            for (i, event) in enumerate(self._events):
+                if event.identifier == counter_stop_event:
                     if _logger is not None:
                         self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
-                    self._events[i] = (moment, counter, lambda: None, (), {})
+                    event.cancel()
                     break
 
     def step(self) -> None:
         """
         Runs a single event of the simulation.
         """
-        self._ts_now, cnt, event, args, kwargs = heappop(self._events)
-        if _logger is not None:
-            self._log(DEBUG, "step-event", counter=cnt, __now=self.now())
-        event(*args, **kwargs)
+        event = heappop(self._events)
+        self._ts_now = event.timestamp
+        event.execute(self)
 
     def stop(self) -> None:
         """
@@ -266,7 +356,7 @@ class Simulator(Named):
         Resets the internal state of the simulator, and sets the simulated clock back to 0.0. This discards all
         outstanding events and tears down hanging process instances.
         """
-        for _, event, _, _ in self.events():
+        for _, _, event, _, _ in self.events():
             if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
                 event.__self__.throw()                                              # type: ignore
         self._events.clear()
@@ -384,6 +474,17 @@ class Process(greenlet.greenlet, TaggedObject):
             _log(INFO, "Process", self.local.name, "resume")
         self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
+    def interrupt(self) -> None:
+        """
+        Interrupts a process that has been previously :py:meth:`pause`d or made to :py:meth:`advance`, by resuming it
+        immediately and raising an :py:class:`Interrupt` exception on it. This exception can be captured by the
+        interrupted process and leveraged for various purposes, such as timing out on a wait or generating activity
+        prompting immediate reaction.
+        """
+        if _logger is not None:
+            _log(INFO, "Process", self.local.name, "interrupt")
+        self.rsim()._schedule(0.0, self.throw, Interrupt())  # type: ignore
+
 
 def pause() -> None:
     """
@@ -404,8 +505,13 @@ def advance(delay: float) -> None:
         _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     rsim = curr.rsim
-    rsim()._schedule(delay, curr.switch)  # type: ignore
-    rsim()._gr.switch()                   # type: ignore
+    id_wakeup = rsim()._schedule(delay, curr.switch)  # type: ignore
+
+    try:
+        rsim()._gr.switch()                   # type: ignore
+    except Interrupt:
+        rsim()._cancel(id_wakeup)             # type: ignore
+        raise
 
 
 def now() -> float:
