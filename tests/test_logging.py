@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 
 from greensim import Simulator, advance, pause, local, add, Process, Queue, Signal, Resource, \
-    enable_logging, disable_logging
+    enable_logging, disable_logging, Interrupt
 from greensim.logging import Filter
 
 
@@ -207,10 +207,88 @@ def test_auto_log_process(auto_logger):
             logging.DEBUG, 20.0, proc_resumer.local.name, "Simulator", sim.name, "schedule",
             dict(delay=0.0, fn=proc_proc.switch, args=(), kwargs={}, counter=4)
         ),
+        (logging.INFO, 20.0, proc_resumer.local.name, "Process", proc_resumer.local.name, "die-finish", {}),
         (logging.DEBUG, 20.0, "", "Simulator", sim.name, "exec-event", dict(counter=4)),
+        (logging.INFO, 20.0, name_proc, "Process", name_proc, "die-finish", {}),
         (logging.DEBUG, 20.0, "", "Simulator", sim.name, "out-of-events", {}),
         (logging.INFO, 20.0, "", "Simulator", sim.name, "stop", {})
     )
+
+
+def test_auto_log_interrupt(auto_logger):
+    proc_interrupter = None
+    auto_logger.setLevel(logging.DEBUG)
+
+    def interrupter(main):
+        advance(15)
+        main.interrupt()
+
+    def proc():
+        nonlocal proc_interrupter
+        local.name = "main"
+        proc_interrupter = add(interrupter, Process.current())
+        advance(10)
+        advance(10)
+
+    sim = Simulator()
+    proc_proc = sim.add(proc)
+    name_proc_orig = proc_proc.local.name
+    sim.run()
+
+    name_proc = proc_proc.local.name
+    check_log(
+        auto_logger,
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "add", dict(fn=proc, args=(), kwargs={})),
+        (
+            logging.DEBUG, 0.0, "", "Simulator", sim.name, "schedule",
+            dict(delay=0.0, fn=proc_proc.switch, args=(), kwargs={}, counter=0)
+        ),
+        (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=inf)),
+        (logging.DEBUG, 0.0, "", "Simulator", sim.name, "exec-event", dict(counter=0)),
+        (logging.DEBUG, 0.0, name_proc_orig, "Process", name_proc_orig, "rename", dict(new="main")),
+        (
+            logging.INFO, 0.0, name_proc, "Simulator", sim.name, "add",
+            dict(fn=interrupter, args=(proc_proc,), kwargs={})
+        ),
+        (
+            logging.DEBUG, 0.0, name_proc, "Simulator", sim.name, "schedule",
+            dict(delay=0.0, fn=proc_interrupter.switch, args=(proc_proc,), kwargs={}, counter=1)
+        ),
+        (logging.INFO, 0.0, name_proc, "Process", name_proc, "advance", dict(delay=10.0)),
+        (
+            logging.DEBUG, 0.0, name_proc, "Simulator", sim.name, "schedule",
+            dict(delay=10.0, fn=proc_proc.switch, args=(), kwargs={}, counter=2)
+        ),
+        (logging.DEBUG, 0.0, "", "Simulator", sim.name, "exec-event", dict(counter=1)),
+        (
+            logging.INFO, 0.0, proc_interrupter.local.name, "Process", proc_interrupter.local.name, "advance",
+            dict(delay=15.0)
+        ),
+        (
+            logging.DEBUG, 0.0, proc_interrupter.local.name, "Simulator", sim.name, "schedule",
+            dict(delay=15.0, fn=proc_interrupter.switch, args=(), kwargs={}, counter=3)
+        ),
+        (logging.DEBUG, 10.0, "", "Simulator", sim.name, "exec-event", dict(counter=2)),
+        (logging.INFO, 10.0, name_proc, "Process", name_proc, "advance", dict(delay=10.0)),
+        (
+            logging.DEBUG, 10.0, name_proc, "Simulator", sim.name, "schedule",
+            dict(delay=10.0, fn=proc_proc.switch, args=(), kwargs={}, counter=4)
+        ),
+        (logging.DEBUG, 15.0, "", "Simulator", sim.name, "exec-event", dict(counter=3)),
+        (logging.INFO, 15.0, proc_interrupter.local.name, "Process", name_proc, "interrupt", {}),
+        (
+            logging.DEBUG, 15.0, proc_interrupter.local.name, "Simulator", sim.name, "schedule",
+            dict(delay=0.0, fn=proc_proc.throw, args=(Interrupt(),), kwargs={}, counter=5)
+        ),
+        (logging.INFO, 15.0, proc_interrupter.local.name, "Process", proc_interrupter.local.name, "die-finish", {}),
+        (logging.DEBUG, 15.0, "", "Simulator", sim.name, "exec-event", dict(counter=5)),
+        (logging.DEBUG, 15.0, name_proc, "Simulator", sim.name, "cancel", dict(id=4)),
+        (logging.INFO, 15.0, name_proc, "Process", name_proc, "die-interrupt", {}),
+        (logging.DEBUG, 15.0, "", "Simulator", sim.name, "cancelled-event", dict(counter=4)),
+        (logging.DEBUG, 15.0, "", "Simulator", sim.name, "out-of-events", {}),
+        (logging.INFO, 15.0, "", "Simulator", sim.name, "stop", {})
+    )
+
 
 
 def test_auto_log_queue(auto_logger):
@@ -270,6 +348,7 @@ def test_auto_log_signal(auto_logger):
         (logging.INFO, 0.0, "", "Simulator", sim.name, "run", dict(duration=inf)),
         (logging.INFO, 0.0, "the-process", "Process", "the-process", "advance", dict(delay=10.0)),
         (logging.INFO, 10.0, "the-process", "Signal", "the-signal", "wait", {}),
+        (logging.INFO, 10.0, "the-process", "Process", "the-process", "die-finish", {}),
         (logging.INFO, 10.0, "", "Simulator", sim.name, "stop", {})
     )
 
@@ -308,8 +387,10 @@ def test_auto_log_resource(auto_logger):
         (logging.INFO, 60.0, "alpha", "Resource", "the-resource", "release", dict(num_instances=1, keeping=0, free=1)),
         (logging.INFO, 60.0, "alpha", "Queue", "the-resource-queue", "pop", dict(process="beta")),
         (logging.INFO, 60.0, "alpha", "Process", "beta", "resume", {}),
+        (logging.INFO, 60.0, "alpha", "Process", "alpha", "die-finish", {}),
         (logging.INFO, 60.0, "beta", "Process", "beta", "advance", dict(delay=10.0)),
         (logging.INFO, 70.0, "beta", "Resource", "the-resource", "release", dict(num_instances=1, keeping=0, free=1)),
+        (logging.INFO, 70.0, "beta", "Process", "beta", "die-finish", {}),
         (logging.INFO, 70.0, "", "Simulator", "sim", "stop", {})
     )
 
@@ -338,5 +419,6 @@ def test_auto_log_resource_take_again(auto_logger):
         (logging.WARNING, 10.0, "proc", "Resource", "res", "take-again", dict(already=2, more=3)),
         (logging.INFO, 10.0, "proc", "Process", "proc", "advance", dict(delay=10.0)),
         (logging.INFO, 20.0, "proc", "Resource", "res", "release", dict(num_instances=5, keeping=0, free=5)),
+        (logging.INFO, 20.0, "proc", "Process", "proc", "die-finish", {}),
         (logging.INFO, 20.0, "", "Simulator", "sim", "stop", {})
     )

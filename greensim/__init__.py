@@ -3,6 +3,7 @@ Core tools for building simulations.
 """
 
 from contextlib import contextmanager
+from functools import total_ordering
 from heapq import heappush, heappop
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
@@ -77,9 +78,11 @@ class Interrupt(Exception):
     execution without having advanced in time as much as it expected, or having fulfilled the condition is hoped to
     satisfy by going into pause.
     """
-    pass
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Interrupt)
 
 
+@total_ordering
 class _Event(object):
     """
     Event on a simulation timeline.
@@ -104,12 +107,12 @@ class _Event(object):
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, _Event):
-            return False
+            raise ValueError("Both terms of the comparison must be _Event instances.")
         return (self._timestamp, self._identifier) < (other._timestamp, other._identifier)
 
     @property
-    def timestamp(self) -> float:
-        return self._timestamp
+    def timestamp(self) -> Optional[float]:
+        return None if self.is_cancelled else self._timestamp
 
     @property
     def identifier(self) -> int:
@@ -143,10 +146,10 @@ class _Event(object):
         """
         if self._is_cancelled:
             if _logger is not None:
-                _log(DEBUG, "Simulator", sim.name, "discard-event", counter=self._identifier, __now=self._timestamp)
+                _log(DEBUG, "Simulator", sim.name, "cancelled-event", counter=self.identifier, __now=sim.now())
         else:
             if _logger is not None:
-                _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self._identifier, __now=self._timestamp)
+                _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self.identifier, __now=self.timestamp)
             self.fn(*self.args, **self.kwargs)
 
 
@@ -254,6 +257,8 @@ class Simulator(Named):
         Cancels a previously scheduled event. This method is private, and is meant for internal usage by the
         :py:class:`Simulator` and :py:class:`Process` classes, and helper functions of this module.
         """
+        if _logger is not None:
+            self._log(DEBUG, "cancel", id=id_cancel)
         for event in self._events:
             if event.identifier == id_cancel:
                 event.cancel()
@@ -309,7 +314,7 @@ class Simulator(Named):
         self._is_running = True
         while self.is_running and len(self._events) > 0:
             event = heappop(self._events)
-            self._ts_now = event.timestamp
+            self._ts_now = event.timestamp or self._ts_now
             event.execute(self)
 
         if len(self._events) == 0:
@@ -332,7 +337,7 @@ class Simulator(Named):
         Runs a single event of the simulation.
         """
         event = heappop(self._events)
-        self._ts_now = event.timestamp
+        self._ts_now = event.timestamp or self._ts_now
         event.execute(self)
 
     def stop(self) -> None:
@@ -425,11 +430,12 @@ class Process(greenlet.greenlet, TaggedObject):
     processes (no risk of race condition). This is useful for implementing non-trivial queue disciplines, for instance.
     """
 
-    def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
+    def __init__(self, sim: Simulator, body: Callable, parent: greenlet.greenlet) -> None:
         global GREENSIM_TAG_ATTRIBUTE
         # Ignore type since Python correctly calls greenlet.greenlet.__init__(),
         # but the type checker compares to TaggedObject.__init__()
-        super().__init__(run, parent)  # type: ignore
+        super().__init__(self._run, parent)  # type: ignore
+        self._body = body
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
@@ -444,8 +450,21 @@ class Process(greenlet.greenlet, TaggedObject):
         else:
             self.clear_tags()
 
-        if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
-            self.tag_with(*getattr(run, GREENSIM_TAG_ATTRIBUTE))
+        if hasattr(body, GREENSIM_TAG_ATTRIBUTE):
+            self.tag_with(*getattr(body, GREENSIM_TAG_ATTRIBUTE))
+
+    def _run(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Wraps around the process body (the function that implements a process within the simulation) so as to catch the
+        eventual Interrupt that may terminate the process.
+        """
+        try:
+            self._body(*args, **kwargs)
+            if _logger is not None:
+                _log(INFO, "Process", self.local.name, "die-finish")
+        except Interrupt:
+            if _logger is not None:
+                _log(INFO, "Process", self.local.name, "die-interrupt")
 
     @staticmethod
     def current() -> 'Process':
