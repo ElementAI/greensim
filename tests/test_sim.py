@@ -28,6 +28,10 @@ def test_event_order_misuse():
         _Event(1.0, 89, lambda: None) < 5
 
 
+def test_nonevent_inequality():
+    assert _Event(1.0, 89, lambda: None) != 5
+
+
 def test_schedule_none():
     sim = Simulator()
     assert 0.0 == sim.now()
