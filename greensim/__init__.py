@@ -208,13 +208,13 @@ class Simulator(Named):
         """
         return self._ts_now
 
-    def events(self) -> Iterable[Tuple[float, bool, Callable, Sequence[Any], Mapping[str, Any]]]:
+    def events(self) -> Iterable[Tuple[Optional[float], Callable, Sequence[Any], Mapping[str, Any]]]:
         """
         Iterates over scheduled events. Each event is a 4-tuple composed of the moment (on the simulated clock) the
         event should execute, the function corresponding to the event, its positional parameters (as a tuple of
         arbitrary length), and its keyword parameters (as a dictionary).
         """
-        return ((event.timestamp, event.is_cancelled, event.fn, event.args, event.kwargs) for event in self._events)
+        return ((event.timestamp, event.fn, event.args, event.kwargs) for event in self._events)
 
     def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> int:
         """
@@ -361,7 +361,7 @@ class Simulator(Named):
         Resets the internal state of the simulator, and sets the simulated clock back to 0.0. This discards all
         outstanding events and tears down hanging process instances.
         """
-        for _, _, event, _, _ in self.events():
+        for _, event, _, _ in self.events():
             if hasattr(event, "__self__") and isinstance(event.__self__, Process):  # type: ignore
                 event.__self__.throw()                                              # type: ignore
         self._events.clear()

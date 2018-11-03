@@ -290,7 +290,6 @@ def test_auto_log_interrupt(auto_logger):
     )
 
 
-
 def test_auto_log_queue(auto_logger):
     def proc(q):
         local.name = "the-process"

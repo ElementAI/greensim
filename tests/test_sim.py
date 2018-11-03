@@ -89,6 +89,7 @@ def sim_cancellable():
         id_event.append(sim._schedule(n, append, n, ll))
     return ll, sim, id_event
 
+
 def test_schedule_cancel(sim_cancellable):
     ll, sim, id_event = sim_cancellable
     sim._cancel(id_event[1])
