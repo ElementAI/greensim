@@ -439,7 +439,7 @@ class Process(greenlet.greenlet, TaggedObject):
         # but the type checker compares to TaggedObject.__init__()
         super().__init__(self._run, parent)  # type: ignore
         self._bind_and_call_constructor(TaggedObject)
-        self._bind_and_call_constructor(greenlet.greenlet, run, parent)
+        self._bind_and_call_constructor(greenlet.greenlet, self._run, parent)
         self._body = body
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()

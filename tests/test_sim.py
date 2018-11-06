@@ -7,7 +7,7 @@ import greenlet
 import pytest
 
 from greensim import GREENSIM_TAG_ATTRIBUTE, Simulator, Process, Named, now, advance, pause, add, happens, local, \
-    Queue, Signal, select, Resource, add_in, add_at, tagged, Interrupt
+    Queue, Signal, select, Resource, add_in, add_at, tagged, Interrupt, _Event
 from greensim.tags import Tags
 
 
