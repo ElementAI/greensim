@@ -817,7 +817,7 @@ class Resource(Named):
         if self._usage.get(proc, 0) > 0:
             if num_instances > self._usage[proc]:
                 raise ValueError(
-                    f"Process {proc.local.name} holds {self._usage[proc]} instances, " +
+                    f"Process {proc.local.name} holds {self._usage[proc]} instances, " +  # noqa: W504
                     f"but requests to release more ({num_instances})"
                 )
             self._usage[proc] -= num_instances
