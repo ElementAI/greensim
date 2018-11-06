@@ -6,8 +6,8 @@ from typing import List, Callable
 import greenlet
 import pytest
 
-from greensim import _Event, Simulator, Process, Named, now, advance, pause, add, happens, local, Queue, Signal, \
-    select, Resource, add_in, add_at, tagged, Interrupt
+from greensim import GREENSIM_TAG_ATTRIBUTE, Simulator, Process, Named, now, advance, pause, add, happens, local, \
+    Queue, Signal, select, Resource, add_in, add_at, tagged, Interrupt
 from greensim.tags import Tags
 
 
@@ -761,6 +761,23 @@ def test_tagged_constructor():
 
     proc = Process(Simulator(), f, None)
     assert proc.has_tag(TestTag.ALICE)
+
+
+def test_tag_in_place():
+    # Standard usage
+    @tagged(TestTag.ALICE)
+    def f():
+        pass
+
+    assert getattr(f, GREENSIM_TAG_ATTRIBUTE) == (TestTag.ALICE,)
+
+    def g():
+        pass
+
+    # Tag function in place
+    assert getattr(tagged(TestTag.BOB)(g), GREENSIM_TAG_ATTRIBUTE) == (TestTag.BOB,)
+    # SHow that this does not affect the original definition
+    assert not hasattr(g, GREENSIM_TAG_ATTRIBUTE)
 
 
 def test_tagged_constructor_multi():
