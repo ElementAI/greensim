@@ -4,7 +4,7 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from functools import total_ordering
-from heapq import heappush, heappop
+from heapq import heappush, heappop, heapify
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
 from types import TracebackType
@@ -708,11 +708,35 @@ class Queue(Named):
             If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
             leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
+        class Cancel(Interrupt):
+            pass
+
         self._counter += 1
         if _logger is not None:
             self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
-        pause()
+
+        proc_balk = None
+        if timeout is not None:
+            def balk(proc):
+                try:
+                    advance(cast(float, timeout))
+                    proc.interrupt(Timeout())
+                except Cancel as ex:
+                    pass
+
+            proc_balk = add(balk, Process.current())
+
+        try:
+            pause()
+            if proc_balk is not None:
+                proc_balk.interrupt(Cancel())
+        except Timeout:
+            current = Process.current()
+            for index in reversed([i for i, (_, proc) in enumerate(self._waiting) if proc is current]):
+                del self._waiting[index]
+            heapify(self._waiting)
+            raise
 
     def pop(self):
         """
