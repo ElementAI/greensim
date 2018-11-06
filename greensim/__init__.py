@@ -77,7 +77,19 @@ class Interrupt(Exception):
     Raised on a :py:class:`Process` instance through the :py:meth:`Process.interrupt` method, so it resumes its
     execution without having advanced in time as much as it expected, or having fulfilled the condition is hoped to
     satisfy by going into pause.
+
+    :param label:
+        See :py:meth:`Process.interrupt`.
     """
+
+    def __init__(self, label: str = "") -> None:
+        super().__init__("")
+        self._label = label
+
+    @property
+    def label(self) -> str:
+        return self._label
+
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Interrupt)
 
@@ -150,7 +162,12 @@ class _Event(object):
         else:
             if _logger is not None:
                 _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self.identifier, __now=self.timestamp)
-            self.fn(*self.args, **self.kwargs)
+            try:
+                self.fn(*self.args, **self.kwargs)
+            except Interrupt:
+                # This happens when interrupting a :py:class:`Process` that has already completed its course, and for
+                # which the greenlet has terminated. We can simply ignore the exception.
+                pass
 
 
 class Simulator(Named):
@@ -513,16 +530,23 @@ class Process(greenlet.greenlet, TaggedObject):
             _log(INFO, "Process", self.local.name, "resume")
         self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
-    def interrupt(self) -> None:
+    def interrupt(self, label: str = "") -> None:
         """
         Interrupts a process that has been previously :py:meth:`pause`d or made to :py:meth:`advance`, by resuming it
         immediately and raising an :py:class:`Interrupt` exception on it. This exception can be captured by the
         interrupted process and leveraged for various purposes, such as timing out on a wait or generating activity
         prompting immediate reaction.
+
+        :param label:
+            Identifier for the interruption, so that stacked systems may leverage interrupts on top of each other
+            without interference. For instance, a process may advance towards a certain timeout as it waits for multiple
+            resources concurrently. Should it hit the timeout, it would :py:meth:`interrupt` the waiting processes so as
+            to clean up after itself. If these processes have themselves a timeout mechanism of their own, also based on
+            interrupts, labels can help them distinguish between these and the clean-up interrupts.
         """
         if _logger is not None:
-            _log(INFO, "Process", self.local.name, "interrupt")
-        self.rsim()._schedule(0.0, self.throw, Interrupt())  # type: ignore
+            _log(INFO, "Process", self.local.name, "interrupt", label=label)
+        self.rsim()._schedule(0.0, self.throw, Interrupt(label))  # type: ignore
 
 
 def pause() -> None:
