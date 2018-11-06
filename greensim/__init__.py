@@ -722,7 +722,7 @@ class Queue(Named):
                 try:
                     advance(cast(float, timeout))
                     proc.interrupt(Timeout())
-                except Cancel as ex:
+                except Cancel:
                     pass
 
             proc_balk = add(balk, Process.current())
