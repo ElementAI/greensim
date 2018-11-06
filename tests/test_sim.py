@@ -116,12 +116,12 @@ def test_process_multiple():
     sim.add(tick, "seven", 7.0, log)
     sim.add(tick, "eleven", 11.0, log)
     sim.run(100.0)
-    assert sorted(
-        [(n, "eleven") for n in range(11, 100, 11)] +
-        [(n, "seven") for n in range(7, 100, 7)] +
-        [(n, "three") for n in range(3, 100, 3)],
-        key=lambda p: p[0]
-    ) == log
+    expectation = [(n, "eleven") for n in range(11, 100, 11)]
+    expectation += [(n, "seven") for n in range(7, 100, 7)]
+    expectation += [(n, "three") for n in range(3, 100, 3)]
+    assert sorted(expectation,
+                  key=lambda p: p[0]
+                  ) == log
 
 
 def test_interleaved_sequence():
