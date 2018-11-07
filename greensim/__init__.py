@@ -58,7 +58,7 @@ def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
     )
 
 
-class Named(object):
+class Named:
 
     def __init__(self, name: Optional[str]) -> None:
         super().__init__()
@@ -83,7 +83,7 @@ class Interrupt(Exception):
 
 
 @total_ordering
-class _Event(object):
+class _Event:
     """
     Event on a simulation timeline.
     """
@@ -386,7 +386,7 @@ class Simulator(Named):
         self._clear()
 
 
-class _TreeLocalParam(object):
+class _TreeLocalParam:
     """
     Growing object for which arbitrary attributes can be set and gotten back.
     """

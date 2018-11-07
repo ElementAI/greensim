@@ -10,7 +10,7 @@ class Tags(Enum):
     pass
 
 
-class TaggedObject(object):
+class TaggedObject:
     """
     Provides standardized methods for managing tags on generic objects
 
