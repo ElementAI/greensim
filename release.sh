@@ -48,7 +48,7 @@ else
     fi
 
     echo "[*] Make annotated tag for the new release"
-    git tag --annotate "$VERSION" || exit $?
+    git tag --annotate --sign "$VERSION" || exit $?
     if ! git push --tags; then
         X=$?
         echo "[x] Unable to push the new tag; removing"
