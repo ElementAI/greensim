@@ -6,9 +6,9 @@ with open("README.md", "r") as file_long_description:
 
 setup(
     name='greensim',
-    version='2.2.2',
     maintainer="Benoit Hamelin",
     maintainer_email="ben@elementai.com",
+    version='2.3.0',
     packages=['greensim'],
     data_files=[('.', ['LICENSE'])],
     install_requires=['greenlet==0.4.14'],
