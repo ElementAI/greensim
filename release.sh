@@ -33,13 +33,13 @@ else
         BRANCH_NEW="$BRANCH_RELEASE"
     fi
 
-    if ! grep -q "version='$VERSION',"; then
+    if ! grep -q "version='$VERSION'," setup.py; then
         echo "[*] Bump version in setup.py"
         TEMP=$(mktemp) && \
             sed -e "s/version='.*',/version='$VERSION',/" setup.py >"$TEMP" && \
             mv "$TEMP" setup.py || \
             exit $?
-        if ! (git commit --message="Bump version to $VERSION" && git push); then
+        if ! (git add setup.py && git commit --message="Bump version to $VERSION" && git push); then
             echo "[x] Unable to commit and push the version bump"
             X=$?
             git checkout setup.py
