@@ -7,7 +7,7 @@ import greenlet
 import pytest
 
 from greensim import GREENSIM_TAG_ATTRIBUTE, Simulator, Process, Named, now, advance, pause, add, happens, local, \
-    Queue, Signal, select, Resource, add_in, add_at, tagged
+    Queue, Signal, select, Resource, add_in, add_at, tagged, Interrupt, _Event
 from greensim.tags import Tags
 
 
@@ -16,6 +16,20 @@ class TestTag(Tags):
     __test__ = False
     ALICE = 0
     BOB = "BOB"
+
+
+def test_event_order():
+    assert _Event(1.0, 89, lambda: None) < _Event(1.1, 1, lambda: None)
+    assert _Event(1.0, 43, lambda: None) < _Event(1.0, 89, lambda: None)
+
+
+def test_event_order_misuse():
+    with pytest.raises(ValueError):
+        _Event(1.0, 89, lambda: None) < 5
+
+
+def test_nonevent_inequality():
+    assert _Event(1.0, 89, lambda: None) != 5
 
 
 def test_schedule_none():
@@ -70,6 +84,32 @@ def test_schedule_recurring():
     assert ll == list(range(11))
 
 
+@pytest.fixture
+def sim_cancellable():
+    ll = []
+    sim = Simulator()
+    id_event = []
+    for n in [1, 3, 5]:
+        id_event.append(sim._schedule(n, append, n, ll))
+    return ll, sim, id_event
+
+
+def test_schedule_cancel(sim_cancellable):
+    ll, sim, id_event = sim_cancellable
+    sim._cancel(id_event[1])
+    sim.run()
+    assert ll == [1, 5]
+    assert sim.now() == 5.0
+
+
+def test_schedule_cancel_last(sim_cancellable):
+    ll, sim, id_event = sim_cancellable
+    sim._cancel(id_event[2])
+    sim.run()
+    assert ll == [1, 3]
+    assert sim.now() == 3.0
+
+
 def test_process_advance():
     def process(ll):
         ll.append(now())
@@ -117,8 +157,8 @@ def test_process_multiple():
     sim.add(tick, "eleven", 11.0, log)
     sim.run(100.0)
     assert sorted(
-        [(n, "eleven") for n in range(11, 100, 11)] +
-        [(n, "seven") for n in range(7, 100, 7)] +
+        [(n, "eleven") for n in range(11, 100, 11)] +  # noqa: W504
+        [(n, "seven") for n in range(7, 100, 7)] +  # noqa: W504
         [(n, "three") for n in range(3, 100, 3)],
         key=lambda p: p[0]
     )
@@ -222,6 +262,53 @@ def test_process_pause_resume():
     sim.run()
     assert sim.now() == pytest.approx(2.0)
     assert counter == 2
+
+
+def do_test_with_interrupter(main, ll_expected, now_expected):
+    def interrupter(main):
+        advance(10.1)
+        main.interrupt()
+
+    ll = []
+    sim = Simulator()
+    proc_main = sim.add(main, ll)
+    sim.add(interrupter, proc_main)
+    sim.run()
+    assert ll == pytest.approx(ll_expected)
+    assert sim.now() == pytest.approx(now_expected)
+
+
+def test_process_interrupt_advancing():
+    def main(ll):
+        for n in range(4):
+            t = n * 5.0
+            ll.append(t)
+            advance(t)
+
+    do_test_with_interrupter(main, [0.0, 5.0, 10.0], 10.1)
+
+
+def test_process_interrupt_paused():
+    def main(ll):
+        ll.append(0)
+        pause()
+        ll.append(1)
+
+    do_test_with_interrupter(main, [0], 10.1)
+
+
+def test_process_interrupt_catch():
+    def main(ll):
+        try:
+            ll.append(0)
+            advance(15.0)
+            ll.append(1)
+        except Interrupt:
+            ll.append(10)
+        advance(5.0)
+        ll.append(2)
+
+    do_test_with_interrupter(main, [0, 10, 2], 15.1)
 
 
 def test_getting_current_process():
