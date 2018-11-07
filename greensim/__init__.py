@@ -3,7 +3,8 @@ Core tools for building simulations.
 """
 
 from contextlib import contextmanager
-from heapq import heappush, heappop
+from functools import total_ordering
+from heapq import heappush, heappop, heapify
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
 from types import TracebackType
@@ -57,7 +58,7 @@ def _log(level: int, obj: str, name: str, event: str, **params: Any) -> None:
     )
 
 
-class Named(object):
+class Named:
 
     def __init__(self, name: Optional[str]) -> None:
         super().__init__()
@@ -69,6 +70,96 @@ class Named(object):
 
     def _log(self, level: int, event: str, **params: Any) -> None:
         _log(level, type(self).__name__, self.name, event, **params)
+
+
+class Interrupt(Exception):
+    """
+    Raised on a :py:class:`Process` instance through the :py:meth:`Process.interrupt` method, so it resumes its
+    execution without having advanced in time as much as it expected, or having fulfilled the condition is hoped to
+    satisfy by going into pause.
+
+    :param label:
+        See :py:meth:`Process.interrupt`.
+    """
+
+    def __eq__(self, other):
+        return isinstance(other, type(self))
+
+
+@total_ordering
+class _Event:
+    """
+    Event on a simulation timeline.
+    """
+
+    def __init__(self, timestamp: float, identifier: int, event: Callable, *args: Any, **kwargs: Any) -> None:
+        super().__init__()
+        self._timestamp = timestamp
+        self._identifier = identifier
+        self._is_cancelled = False
+        self._event = event
+        self._args = args
+        self._kwargs = kwargs
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Event) and \
+            self.timestamp == other.timestamp and \
+            self.identifier == other.identifier and \
+            self.fn == other.fn and \
+            self.args == other.args and \
+            self.kwargs == other.kwargs
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, _Event):
+            raise ValueError("Both terms of the comparison must be _Event instances.")
+        return (self._timestamp, self.identifier) < (other._timestamp, other.identifier)
+
+    @property
+    def timestamp(self) -> Optional[float]:
+        return None if self.is_cancelled else self._timestamp
+
+    @property
+    def identifier(self) -> int:
+        return self._identifier
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._is_cancelled
+
+    @property
+    def fn(self) -> Callable:
+        return self._event
+
+    @property
+    def args(self) -> Sequence[Any]:
+        return self._args
+
+    @property
+    def kwargs(self) -> Mapping[str, Any]:
+        return self._kwargs
+
+    def cancel(self) -> None:
+        """
+        Cancels this event, so that its execution will no-op.
+        """
+        self._is_cancelled = True
+
+    def execute(self, sim: "Simulator") -> None:
+        """
+        Executes the event, unless it was cancelled.
+        """
+        if self._is_cancelled:
+            if _logger is not None:
+                _log(DEBUG, "Simulator", sim.name, "cancelled-event", counter=self.identifier, __now=sim.now())
+        else:
+            if _logger is not None:
+                _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self.identifier, __now=self.timestamp)
+            try:
+                self.fn(*self.args, **self.kwargs)
+            except Interrupt:
+                # This happens when interrupting a :py:class:`Process` that has already completed its course, and for
+                # which the greenlet has terminated. We can simply ignore the exception.
+                pass
 
 
 class Simulator(Named):
@@ -115,7 +206,7 @@ class Simulator(Named):
         """
         super().__init__(name)
         self._ts_now = ts_now
-        self._events: List[Tuple[float, int, Callable, Tuple, Dict]] = []
+        self._events: List[_Event] = []
         self._is_running = False
         self._counter = 0
         self._gr = greenlet.getcurrent()  # The Simulator's greenlet
@@ -126,15 +217,15 @@ class Simulator(Named):
         """
         return self._ts_now
 
-    def events(self) -> Iterable[Tuple[float, Callable, Sequence, Mapping]]:
+    def events(self) -> Iterable[Tuple[Optional[float], Callable, Sequence[Any], Mapping[str, Any]]]:
         """
         Iterates over scheduled events. Each event is a 4-tuple composed of the moment (on the simulated clock) the
         event should execute, the function corresponding to the event, its positional parameters (as a tuple of
         arbitrary length), and its keyword parameters (as a dictionary).
         """
-        return ((moment, event, args, kwargs) for moment, _, event, args, kwargs in self._events)
+        return ((event.timestamp, event.fn, event.args, event.kwargs) for event in self._events)
 
-    def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> 'Simulator':
+    def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> int:
         """
         Schedules a one-time event to be run along the simulation.  The event is scheduled relative to current simulator
         time, so delay is expected to be a positive simulation time interval. The `event' parameter corresponds to a
@@ -143,8 +234,10 @@ class Simulator(Named):
         evaluated when `_schedule()` is called, not when the event is executed). Once this event function returns, the
         simulation carries on to the next event, or stops if none remain.
 
-        Remark that this method is private, and is meant for internal usage by the `Simulator` and `Process` classes,
-        and helper functions of this package.
+        Remark that this method is private, and is meant for internal usage by the :py:class:`Simulator` and
+        :py:class:`Process` classes, and helper functions of this module.
+
+        :return: Unique identifier for the scheduled event.
         """
         if _logger is not None:
             self._log(
@@ -163,9 +256,22 @@ class Simulator(Named):
 
         # Use counter to strictly order events happening at the same simulated time. This gives a total order on events,
         # working around the heap queue not yielding a stable ordering.
-        heappush(self._events, (self._ts_now + delay, self._counter, event, args, kwargs))
+        id_event = self._counter
+        heappush(self._events, _Event(self._ts_now + delay, id_event, event, *args, **kwargs))
         self._counter += 1
-        return self
+        return id_event
+
+    def _cancel(self, id_cancel) -> None:
+        """
+        Cancels a previously scheduled event. This method is private, and is meant for internal usage by the
+        :py:class:`Simulator` and :py:class:`Process` classes, and helper functions of this module.
+        """
+        if _logger is not None:
+            self._log(DEBUG, "cancel", id=id_cancel)
+        for event in self._events:
+            if event.identifier == id_cancel:
+                event.cancel()
+                break
 
     def add(self, fn_process: Callable, *args: Any, **kwargs: Any) -> 'Process':
         """
@@ -216,10 +322,9 @@ class Simulator(Named):
 
         self._is_running = True
         while self.is_running and len(self._events) > 0:
-            self._ts_now, cnt, event, args, kwargs = heappop(self._events)
-            if _logger is not None:
-                self._log(DEBUG, "exec-event", counter=cnt, __now=self.now())
-            event(*args, **kwargs)
+            event = heappop(self._events)
+            self._ts_now = event.timestamp or self._ts_now
+            event.execute(self)
 
         if len(self._events) == 0:
             if _logger is not None:
@@ -229,21 +334,20 @@ class Simulator(Named):
         if counter_stop_event is not None:
             # Change the planned stop to a no-op. We would rather eliminate it, but this would force a re-sort of the
             # event queue.
-            for (i, (moment, counter, _, _, _)) in enumerate(self._events):
-                if counter == counter_stop_event:
+            for (i, event) in enumerate(self._events):
+                if event.identifier == counter_stop_event:
                     if _logger is not None:
                         self._log(DEBUG, "cancel-stop", counter=counter_stop_event)
-                    self._events[i] = (moment, counter, lambda: None, (), {})
+                    event.cancel()
                     break
 
     def step(self) -> None:
         """
         Runs a single event of the simulation.
         """
-        self._ts_now, cnt, event, args, kwargs = heappop(self._events)
-        if _logger is not None:
-            self._log(DEBUG, "step-event", counter=cnt, __now=self.now())
-        event(*args, **kwargs)
+        event = heappop(self._events)
+        self._ts_now = event.timestamp or self._ts_now
+        event.execute(self)
 
     def stop(self) -> None:
         """
@@ -291,7 +395,7 @@ class Simulator(Named):
         self._clear()
 
 
-class _TreeLocalParam(object):
+class _TreeLocalParam:
     """
     Growing object for which arbitrary attributes can be set and gotten back.
     """
@@ -337,10 +441,15 @@ class Process(greenlet.greenlet, TaggedObject):
     For a description of why the _bind_and_call_constructor method is necessary and what it does, see get_binding.md
     """
 
-    def __init__(self, sim: Simulator, run: Callable, parent: greenlet.greenlet) -> None:
+    def __init__(self, sim: Simulator, body: Callable, parent: greenlet.greenlet) -> None:
         global GREENSIM_TAG_ATTRIBUTE
+
+        # Ignore type since Python correctly calls greenlet.greenlet.__init__(),
+        # but the type checker compares to TaggedObject.__init__()
+        super().__init__(self._run, parent)  # type: ignore
         self._bind_and_call_constructor(TaggedObject)
-        self._bind_and_call_constructor(greenlet.greenlet, run, parent)
+        self._bind_and_call_constructor(greenlet.greenlet, self._run, parent)
+        self._body = body
         self.rsim = weakref.ref(sim)
         self.local = _TreeLocalParam()
         self.local.name = str(uuid4())
@@ -348,8 +457,21 @@ class Process(greenlet.greenlet, TaggedObject):
         if Process.current_exists():
             self.tag_with(*Process.current()._tag_set)
 
-        if hasattr(run, GREENSIM_TAG_ATTRIBUTE):
-            self.tag_with(*getattr(run, GREENSIM_TAG_ATTRIBUTE))
+        if hasattr(body, GREENSIM_TAG_ATTRIBUTE):
+            self.tag_with(*getattr(body, GREENSIM_TAG_ATTRIBUTE))
+
+    def _run(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Wraps around the process body (the function that implements a process within the simulation) so as to catch the
+        eventual Interrupt that may terminate the process.
+        """
+        try:
+            self._body(*args, **kwargs)
+            if _logger is not None:
+                _log(INFO, "Process", self.local.name, "die-finish")
+        except Interrupt:
+            if _logger is not None:
+                _log(INFO, "Process", self.local.name, "die-interrupt")
 
     def _bind_and_call_constructor(self, t: type, *args) -> None:
         """
@@ -400,6 +522,28 @@ class Process(greenlet.greenlet, TaggedObject):
             _log(INFO, "Process", self.local.name, "resume")
         self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
+    def interrupt(self, inter: Optional[Interrupt] = None) -> None:
+        """
+        Interrupts a process that has been previously :py:meth:`pause`d or made to :py:meth:`advance`, by resuming it
+        immediately and raising an :py:class:`Interrupt` exception on it. This exception can be captured by the
+        interrupted process and leveraged for various purposes, such as timing out on a wait or generating activity
+        prompting immediate reaction.
+
+        :param inter:
+            Exception to raise on the :py:class:`Process`; if ``None`` is given, an instance of :py:class:`Interrupt` is
+            raised. This allows one to use specialized :py:class:`Interrupt` subclasses to as to implement
+            non-interfering mixed interruption stacks.  For instance, a process may advance towards a certain timeout as
+            it waits for multiple resources concurrently. Should it hit the timeout, it would :py:meth:`interrupt` the
+            waiting processes so as to clean up after itself. If these processes have themselves a timeout mechanism of
+            their own, also based on interrupts, using a subclass can help them distinguish between these and the
+            clean-up interrupts.
+        """
+        if inter is None:
+            inter = Interrupt()
+        if _logger is not None:
+            _log(INFO, "Process", self.local.name, "interrupt", type=type(inter).__name__)
+        self.rsim()._schedule(0.0, self.throw, inter)  # type: ignore
+
 
 def pause() -> None:
     """
@@ -420,8 +564,13 @@ def advance(delay: float) -> None:
         _log(INFO, "Process", local.name, "advance", delay=delay)
     curr = Process.current()
     rsim = curr.rsim
-    rsim()._schedule(delay, curr.switch)  # type: ignore
-    rsim()._gr.switch()                   # type: ignore
+    id_wakeup = rsim()._schedule(delay, curr.switch)  # type: ignore
+
+    try:
+        rsim()._gr.switch()                   # type: ignore
+    except Interrupt:
+        rsim()._cancel(id_wakeup)             # type: ignore
+        raise
 
 
 def now() -> float:
@@ -498,6 +647,14 @@ def tagged(*tags: Tags) -> Callable:
     return hook
 
 
+class Timeout(Exception):
+    """
+    Exception raised on processes when the wait for a :py:class:`Queue`, :py:class:`Signal` or :py:class:`Resource`
+    takes too long.
+    """
+    pass
+
+
 class Queue(Named):
     """
     Waiting queue for processes, with arbitrary queueing discipline.  Processes `join()` the queue, which pauses them.
@@ -541,17 +698,45 @@ class Queue(Named):
         """
         return self._waiting[0][1]
 
-    def join(self):
+    def join(self, timeout: Optional[float] = None):
         """
         Can be invoked only by a process: makes it join the queue. The order token is computed once for the process,
         before it is enqueued. Another process or event, or control code of some sort, must invoke method `pop()` of the
         queue so that the process can eventually leave the queue and carry on with its execution.
+
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
+        class Cancel(Interrupt):
+            pass
+
         self._counter += 1
         if _logger is not None:
             self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
-        pause()
+
+        proc_balk = None
+        if timeout is not None:
+            def balk(proc):
+                try:
+                    advance(cast(float, timeout))
+                    proc.interrupt(Timeout())
+                except Cancel:
+                    pass
+
+            proc_balk = add(balk, Process.current())
+
+        try:
+            pause()
+            if proc_balk is not None:
+                proc_balk.interrupt(Cancel())
+        except Timeout:
+            current = Process.current()
+            for index in reversed([i for i, (_, proc) in enumerate(self._waiting) if proc is current]):
+                del self._waiting[index]
+            heapify(self._waiting)
+            raise
 
     def pop(self):
         """
@@ -609,33 +794,60 @@ class Signal(Named):
         self._is_on = False
         return self
 
-    def wait(self) -> None:
+    def wait(self, timeout: Optional[float] = None) -> None:
         """
         Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
+
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            stops waiting for the :py:class:`Signal`. In such a situation, a :py:class:`Timeout` exception is raised on
+            the process.
         """
         if _logger is not None:
             self._log(INFO, "wait")
         while not self.is_on:
-            self._queue.join()
+            self._queue.join(timeout)
 
 
-def select(*signals: Signal) -> List[Signal]:
+def select(*signals: Signal, **kwargs) -> List[Signal]:
     """
     Allows the current process to wait for multiple concurrent signals. Waits until one of the signals turns on, at
     which point this signal is returned.
+
+    :param timeout:
+        If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+        stops waiting on the set of :py:class:`Signal`s. In such a situation, a :py:class:`Timeout` exception is raised
+        on the process.
     """
+    class CleanUp(Interrupt):
+        pass
+
+    timeout = kwargs.get("timeout", None)
+    if not isinstance(timeout, (float, int, type(None))):
+        raise ValueError("The timeout keyword parameter can be either None or a number.")
+
     def wait_one(signal: Signal, common: Signal) -> None:
-        signal.wait()
-        common.turn_on()
+        try:
+            signal.wait()
+            common.turn_on()
+        except CleanUp:
+            pass
 
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
     common = Signal(name=local.name + "-selector").turn_off()
     if _logger is not None:
         _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
+    procs = []
     for signal in signals:
-        add(wait_one, signal, common)
-    common.wait()
+        procs.append(add(wait_one, signal, common))
+
+    try:
+        common.wait(timeout)
+    finally:
+        for proc in procs:  # Clean up the support processes.
+            proc.interrupt(CleanUp())
+
     return [signal for signal in signals if signal.is_on]
 
 
@@ -666,21 +878,28 @@ class Resource(Named):
         self._usage: Dict[Process, int] = {}
 
     @property
-    def num_instances_free(self):
+    def num_instances_free(self) -> int:
         """Returns the number of free instances."""
         return self._num_instances_free
 
     @property
-    def num_instances_total(self):
+    def num_instances_total(self) -> int:
         """Returns the total number of instances of this resource."""
         return self.num_instances_free + sum(self._usage.values())
 
-    def take(self, num_instances: int = 1):
+    def take(self, num_instances: int = 1, timeout: Optional[float] = None) -> None:
         """
         The current process reserves a certain number of instances. If there are not enough instances available, the
         process is made to join a queue. When this method returns, the process holds the instances it has requested to
         take.
+
+        :param num_instances:
+            Number of resource instances to take.
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
+
         if num_instances < 1:
             raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
         if num_instances > self.num_instances_total:
@@ -692,15 +911,17 @@ class Resource(Named):
         proc = Process.current()
         if self._num_instances_free < num_instances:
             proc.local.__num_instances_required = num_instances
-            self._waiting.join()
-            del proc.local.__num_instances_required
+            try:
+                self._waiting.join(timeout)
+            finally:
+                del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
         if _logger is not None and proc in self._usage:
             self._log(WARNING, "take-again", already=self._usage[proc], more=num_instances)
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
 
-    def release(self, num_instances: int = 1):
+    def release(self, num_instances: int = 1) -> None:
         """
         The current process releases instances it has previously taken. It may thus release less than it has taken.
         These released instances become free. If the total number of free instances then satisfy the request of the top
@@ -739,14 +960,20 @@ class Resource(Named):
             )
 
     @contextmanager
-    def using(self, num_instances: int = 1):
+    def using(self, num_instances: int = 1, timeout: Optional[float] = None):
         """
         Context manager around resource reservation: when the code block under the with statement is entered, the
         current process holds the instances it requested. When it exits, all these instances are released.
 
         Do not explicitly `release()` instances within the context block, at the risk of breaking instance management.
         If one needs to `release()` instances piecemeal, it should instead reserve the instances using `take()`.
+
+        :param num_instances:
+            Number of resource instances to take.
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
-        self.take(num_instances)
+        self.take(num_instances, timeout)
         yield self
         self.release(num_instances)

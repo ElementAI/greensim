@@ -7,7 +7,7 @@ import greenlet
 import pytest
 
 from greensim import GREENSIM_TAG_ATTRIBUTE, Simulator, Process, Named, now, advance, pause, add, happens, local, \
-    Queue, Signal, select, Resource, add_in, add_at, tagged
+    Queue, Signal, select, Resource, add_in, add_at, tagged, Interrupt, _Event, Timeout
 from greensim.tags import Tags
 
 
@@ -16,6 +16,20 @@ class TestTag(Tags):
     __test__ = False
     ALICE = 0
     BOB = "BOB"
+
+
+def test_event_order():
+    assert _Event(1.0, 89, lambda: None) < _Event(1.1, 1, lambda: None)
+    assert _Event(1.0, 43, lambda: None) < _Event(1.0, 89, lambda: None)
+
+
+def test_event_order_misuse():
+    with pytest.raises(ValueError):
+        _Event(1.0, 89, lambda: None) < 5
+
+
+def test_nonevent_inequality():
+    assert _Event(1.0, 89, lambda: None) != 5
 
 
 def test_schedule_none():
@@ -68,6 +82,32 @@ def test_schedule_recurring():
     sim.run()
     assert sim.now() == 11.0
     assert ll == list(range(11))
+
+
+@pytest.fixture
+def sim_cancellable():
+    ll = []
+    sim = Simulator()
+    id_event = []
+    for n in [1, 3, 5]:
+        id_event.append(sim._schedule(n, append, n, ll))
+    return ll, sim, id_event
+
+
+def test_schedule_cancel(sim_cancellable):
+    ll, sim, id_event = sim_cancellable
+    sim._cancel(id_event[1])
+    sim.run()
+    assert ll == [1, 5]
+    assert sim.now() == 5.0
+
+
+def test_schedule_cancel_last(sim_cancellable):
+    ll, sim, id_event = sim_cancellable
+    sim._cancel(id_event[2])
+    sim.run()
+    assert ll == [1, 3]
+    assert sim.now() == 3.0
 
 
 def test_process_advance():
@@ -222,6 +262,53 @@ def test_process_pause_resume():
     sim.run()
     assert sim.now() == pytest.approx(2.0)
     assert counter == 2
+
+
+def do_test_with_interrupter(main, ll_expected, now_expected):
+    def interrupter(main):
+        advance(10.1)
+        main.interrupt()
+
+    ll = []
+    sim = Simulator()
+    proc_main = sim.add(main, ll)
+    sim.add(interrupter, proc_main)
+    sim.run()
+    assert ll == pytest.approx(ll_expected)
+    assert sim.now() == pytest.approx(now_expected)
+
+
+def test_process_interrupt_advancing():
+    def main(ll):
+        for n in range(4):
+            t = n * 5.0
+            ll.append(t)
+            advance(t)
+
+    do_test_with_interrupter(main, [0.0, 5.0, 10.0], 10.1)
+
+
+def test_process_interrupt_paused():
+    def main(ll):
+        ll.append(0)
+        pause()
+        ll.append(1)
+
+    do_test_with_interrupter(main, [0], 10.1)
+
+
+def test_process_interrupt_catch():
+    def main(ll):
+        try:
+            ll.append(0)
+            advance(15.0)
+            ll.append(1)
+        except Interrupt:
+            ll.append(10)
+        advance(5.0)
+        ll.append(2)
+
+    do_test_with_interrupter(main, [0, 10, 2], 15.1)
 
 
 def test_getting_current_process():
@@ -414,6 +501,82 @@ def test_queue_length():
     assert 0 == len(queue)
 
 
+def test_queue_timeout():
+    result = 0
+    queue = Queue()
+    sim = Simulator()
+
+    def join_then_balk():
+        nonlocal result
+        try:
+            queue.join(10.0)
+            result = -1
+        except Timeout:
+            result = 1
+            sim.stop()
+
+    def would_pop():
+        nonlocal result
+        advance(20.0)
+        queue.pop()
+        result += 1
+
+    sim.add(join_then_balk)
+    sim.add(would_pop)
+    sim.run()
+    assert result == 1
+    assert(sim.now() == pytest.approx(10.0))
+    assert len(queue) == 0
+    sim.run()
+    assert result == 2
+    assert(sim.now() == pytest.approx(20.0))
+
+
+def test_queue_timeout_maintain_order():
+    queue = Queue()
+    log = []
+
+    def join_and_balk(name, timeout):
+        try:
+            queue.join(timeout)
+            log.append((name, "finish"))
+        except Timeout:
+            log.append((name, "balk"))
+
+    def pop():
+        while len(queue) > 0:
+            advance(50)
+            queue.pop()
+
+    sim = Simulator()
+    for name, timeout_balk in [("a", None), ("b", 10), ("c", None), ("d", 80), ("e", None)]:
+        sim.add(join_and_balk, name, timeout_balk)
+    sim.add(pop)
+    sim.run()
+    assert log == [("b", "balk"), ("a", "finish"), ("d", "balk"), ("c", "finish"), ("e", "finish")]
+
+
+def test_cancel_timeout():
+    queue = Queue()
+    log = []
+
+    def join_and_balk(name):
+        try:
+            queue.join(100)
+            log.append((name, "finish"))
+        except Timeout:
+            log.append((name, "balk"))
+
+    def pop():
+        queue.pop()
+
+    sim = Simulator()
+    sim.add(join_and_balk, "a")
+    sim.add_in(50, pop)
+    sim.run()
+    assert log == [("a", "finish")]
+
+
 def wait_for(signal: Signal, times_expected: List[float], delay_between: float, log: List[float] = []):
     for expected in times_expected:
         advance(delay_between)
@@ -481,6 +644,29 @@ def turn_on(delay: float, signal: Signal) -> None:
     signal.turn_on()
 
 
+def test_signal_timeout():
+    log = []
+    signal = Signal().turn_off()
+
+    def wait_then_balk(name: str, delay_balk: float) -> None:
+        try:
+            signal.wait(delay_balk)
+            log.append((name, "finish"))
+        except Timeout:
+            log.append((name, "balk"))
+
+    def turn_on():
+        advance(20.0)
+        signal.turn_on()
+
+    sim = Simulator()
+    sim.add(wait_then_balk, "a", 10.0)
+    sim.add(wait_then_balk, "b", 30.0)
+    sim.add(turn_on)
+    sim.run()
+    assert log == [("a", "balk"), ("b", "finish")]
+
+
 def test_select_one_on():
     has_passed = False
 
@@ -519,6 +705,50 @@ def test_select_multiple_turn_on():
         sim.add(enabler, delay, signal)
     sim.add(selecter, signals, [delay < 2.0 for delay in delays])
     sim.run()
+
+
+def test_select_timeout():
+    sigs = [Signal().turn_off() for n in range(5)]
+    log = []
+
+    def selecter() -> None:
+        try:
+            select(*sigs, timeout=10.0)
+            log.append(1)
+        except Timeout:
+            log.append(2)
+
+    def turn_on() -> None:
+        advance(25.0)
+        sigs[0].turn_on()
+
+    sim = Simulator()
+    sim.add(selecter)
+    sim.add(turn_on)
+    sim.run()
+    assert log == [2]
+
+
+def test_select_timeout_bad_parameter():
+    sigs = [Signal().turn_off() for n in range(5)]
+    log = []
+
+    def selecter() -> None:
+        try:
+            select(*sigs, timeout="asdf")
+            log.append(1)
+        except Timeout:
+            log.append(2)
+
+    def turn_on() -> None:
+        advance(25.0)
+        sigs[0].turn_on()
+
+    sim = Simulator()
+    sim.add(selecter)
+    sim.add(turn_on)
+    with pytest.raises(ValueError):
+        sim.run()
 
 
 def do_while_holding_resource(delay: float, log: List[float]):
@@ -611,6 +841,25 @@ def test_resource_release_while_holding_none():
     sim.add(proc, resource)
     with pytest.raises(RuntimeError):
         sim.run()
+
+
+def test_resource_timeout():
+    resource = Resource(1)
+    log = []
+
+    def take_but_balk(name, delay_balk):
+        try:
+            with resource.using(timeout=delay_balk):
+                advance(20.0)
+                log.append((name, "finish"))
+        except Timeout:
+            log.append((name, "balk"))
+
+    sim = Simulator()
+    sim.add(take_but_balk, "a", 10.0)
+    sim.add_in(5.0, take_but_balk, "b", 10.0)
+    sim.run()
+    assert log == [("b", "balk"), ("a", "finish")]
 
 
 class SimulatorWithDestructor(Simulator):
