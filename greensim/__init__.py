@@ -99,8 +99,8 @@ class _Event(object):
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, _Event) and \
-            self._timestamp == other._timestamp and \
-            self._identifier == other._identifier and \
+            self.timestamp == other.timestamp and \
+            self.identifier == other.identifier and \
             self.fn == other.fn and \
             self.args == other.args and \
             self.kwargs == other.kwargs
