@@ -4,7 +4,7 @@ Core tools for building simulations.
 
 from contextlib import contextmanager
 from functools import total_ordering
-from heapq import heappush, heappop
+from heapq import heappush, heappop, heapify
 from logging import getLogger, DEBUG, INFO, WARNING
 from math import inf
 from types import TracebackType
@@ -77,9 +77,13 @@ class Interrupt(Exception):
     Raised on a :py:class:`Process` instance through the :py:meth:`Process.interrupt` method, so it resumes its
     execution without having advanced in time as much as it expected, or having fulfilled the condition is hoped to
     satisfy by going into pause.
+
+    :param label:
+        See :py:meth:`Process.interrupt`.
     """
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, Interrupt)
+
+    def __eq__(self, other):
+        return isinstance(other, type(self))
 
 
 @total_ordering
@@ -150,7 +154,12 @@ class _Event:
         else:
             if _logger is not None:
                 _log(DEBUG, "Simulator", sim.name, "exec-event", counter=self.identifier, __now=self.timestamp)
-            self.fn(*self.args, **self.kwargs)
+            try:
+                self.fn(*self.args, **self.kwargs)
+            except Interrupt:
+                # This happens when interrupting a :py:class:`Process` that has already completed its course, and for
+                # which the greenlet has terminated. We can simply ignore the exception.
+                pass
 
 
 class Simulator(Named):
@@ -513,16 +522,27 @@ class Process(greenlet.greenlet, TaggedObject):
             _log(INFO, "Process", self.local.name, "resume")
         self.rsim()._schedule(0.0, self.switch)  # type: ignore
 
-    def interrupt(self) -> None:
+    def interrupt(self, inter: Optional[Interrupt] = None) -> None:
         """
         Interrupts a process that has been previously :py:meth:`pause`d or made to :py:meth:`advance`, by resuming it
         immediately and raising an :py:class:`Interrupt` exception on it. This exception can be captured by the
         interrupted process and leveraged for various purposes, such as timing out on a wait or generating activity
         prompting immediate reaction.
+
+        :param inter:
+            Exception to raise on the :py:class:`Process`; if ``None`` is given, an instance of :py:class:`Interrupt` is
+            raised. This allows one to use specialized :py:class:`Interrupt` subclasses to as to implement
+            non-interfering mixed interruption stacks.  For instance, a process may advance towards a certain timeout as
+            it waits for multiple resources concurrently. Should it hit the timeout, it would :py:meth:`interrupt` the
+            waiting processes so as to clean up after itself. If these processes have themselves a timeout mechanism of
+            their own, also based on interrupts, using a subclass can help them distinguish between these and the
+            clean-up interrupts.
         """
+        if inter is None:
+            inter = Interrupt()
         if _logger is not None:
-            _log(INFO, "Process", self.local.name, "interrupt")
-        self.rsim()._schedule(0.0, self.throw, Interrupt())  # type: ignore
+            _log(INFO, "Process", self.local.name, "interrupt", type=type(inter).__name__)
+        self.rsim()._schedule(0.0, self.throw, inter)  # type: ignore
 
 
 def pause() -> None:
@@ -627,6 +647,14 @@ def tagged(*tags: Tags) -> Callable:
     return hook
 
 
+class Timeout(Exception):
+    """
+    Exception raised on processes when the wait for a :py:class:`Queue`, :py:class:`Signal` or :py:class:`Resource`
+    takes too long.
+    """
+    pass
+
+
 class Queue(Named):
     """
     Waiting queue for processes, with arbitrary queueing discipline.  Processes `join()` the queue, which pauses them.
@@ -670,17 +698,45 @@ class Queue(Named):
         """
         return self._waiting[0][1]
 
-    def join(self):
+    def join(self, timeout: Optional[float] = None):
         """
         Can be invoked only by a process: makes it join the queue. The order token is computed once for the process,
         before it is enqueued. Another process or event, or control code of some sort, must invoke method `pop()` of the
         queue so that the process can eventually leave the queue and carry on with its execution.
+
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
+        class Cancel(Interrupt):
+            pass
+
         self._counter += 1
         if _logger is not None:
             self._log(INFO, "join")
         heappush(self._waiting, (self._get_order_token(self._counter), Process.current()))
-        pause()
+
+        proc_balk = None
+        if timeout is not None:
+            def balk(proc):
+                try:
+                    advance(cast(float, timeout))
+                    proc.interrupt(Timeout())
+                except Cancel:
+                    pass
+
+            proc_balk = add(balk, Process.current())
+
+        try:
+            pause()
+            if proc_balk is not None:
+                proc_balk.interrupt(Cancel())
+        except Timeout:
+            current = Process.current()
+            for index in reversed([i for i, (_, proc) in enumerate(self._waiting) if proc is current]):
+                del self._waiting[index]
+            heapify(self._waiting)
+            raise
 
     def pop(self):
         """
@@ -738,33 +794,60 @@ class Signal(Named):
         self._is_on = False
         return self
 
-    def wait(self) -> None:
+    def wait(self, timeout: Optional[float] = None) -> None:
         """
         Makes the current process wait for the signal. If it is closed, it will join the signal's queue.
+
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            stops waiting for the :py:class:`Signal`. In such a situation, a :py:class:`Timeout` exception is raised on
+            the process.
         """
         if _logger is not None:
             self._log(INFO, "wait")
         while not self.is_on:
-            self._queue.join()
+            self._queue.join(timeout)
 
 
-def select(*signals: Signal) -> List[Signal]:
+def select(*signals: Signal, **kwargs) -> List[Signal]:
     """
     Allows the current process to wait for multiple concurrent signals. Waits until one of the signals turns on, at
     which point this signal is returned.
+
+    :param timeout:
+        If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+        stops waiting on the set of :py:class:`Signal`s. In such a situation, a :py:class:`Timeout` exception is raised
+        on the process.
     """
+    class CleanUp(Interrupt):
+        pass
+
+    timeout = kwargs.get("timeout", None)
+    if not isinstance(timeout, (float, int, type(None))):
+        raise ValueError("The timeout keyword parameter can be either None or a number.")
+
     def wait_one(signal: Signal, common: Signal) -> None:
-        signal.wait()
-        common.turn_on()
+        try:
+            signal.wait()
+            common.turn_on()
+        except CleanUp:
+            pass
 
     # We simply sets up multiple sub-processes respectively waiting for one of the signals. Once one of them has fired,
     # the others will all run no-op eventually, so no need for any explicit clean-up.
     common = Signal(name=local.name + "-selector").turn_off()
     if _logger is not None:
         _log(INFO, "select", "select", "select", signals=[sig.name for sig in signals])
+    procs = []
     for signal in signals:
-        add(wait_one, signal, common)
-    common.wait()
+        procs.append(add(wait_one, signal, common))
+
+    try:
+        common.wait(timeout)
+    finally:
+        for proc in procs:  # Clean up the support processes.
+            proc.interrupt(CleanUp())
+
     return [signal for signal in signals if signal.is_on]
 
 
@@ -795,21 +878,28 @@ class Resource(Named):
         self._usage: Dict[Process, int] = {}
 
     @property
-    def num_instances_free(self):
+    def num_instances_free(self) -> int:
         """Returns the number of free instances."""
         return self._num_instances_free
 
     @property
-    def num_instances_total(self):
+    def num_instances_total(self) -> int:
         """Returns the total number of instances of this resource."""
         return self.num_instances_free + sum(self._usage.values())
 
-    def take(self, num_instances: int = 1):
+    def take(self, num_instances: int = 1, timeout: Optional[float] = None) -> None:
         """
         The current process reserves a certain number of instances. If there are not enough instances available, the
         process is made to join a queue. When this method returns, the process holds the instances it has requested to
         take.
+
+        :param num_instances:
+            Number of resource instances to take.
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
+
         if num_instances < 1:
             raise ValueError(f"Process must request at least 1 instance; here requested {num_instances}.")
         if num_instances > self.num_instances_total:
@@ -821,15 +911,17 @@ class Resource(Named):
         proc = Process.current()
         if self._num_instances_free < num_instances:
             proc.local.__num_instances_required = num_instances
-            self._waiting.join()
-            del proc.local.__num_instances_required
+            try:
+                self._waiting.join(timeout)
+            finally:
+                del proc.local.__num_instances_required
         self._num_instances_free -= num_instances
         if _logger is not None and proc in self._usage:
             self._log(WARNING, "take-again", already=self._usage[proc], more=num_instances)
         self._usage.setdefault(proc, 0)
         self._usage[proc] += num_instances
 
-    def release(self, num_instances: int = 1):
+    def release(self, num_instances: int = 1) -> None:
         """
         The current process releases instances it has previously taken. It may thus release less than it has taken.
         These released instances become free. If the total number of free instances then satisfy the request of the top
@@ -868,14 +960,20 @@ class Resource(Named):
             )
 
     @contextmanager
-    def using(self, num_instances: int = 1):
+    def using(self, num_instances: int = 1, timeout: Optional[float] = None):
         """
         Context manager around resource reservation: when the code block under the with statement is entered, the
         current process holds the instances it requested. When it exits, all these instances are released.
 
         Do not explicitly `release()` instances within the context block, at the risk of breaking instance management.
         If one needs to `release()` instances piecemeal, it should instead reserve the instances using `take()`.
+
+        :param num_instances:
+            Number of resource instances to take.
+        :param timeout:
+            If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
+            leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
-        self.take(num_instances)
+        self.take(num_instances, timeout)
         yield self
         self.release(num_instances)

@@ -275,7 +275,7 @@ def test_auto_log_interrupt(auto_logger):
             dict(delay=10.0, fn=proc_proc.switch, args=(), kwargs={}, counter=4)
         ),
         (logging.DEBUG, 15.0, "", "Simulator", sim.name, "exec-event", dict(counter=3)),
-        (logging.INFO, 15.0, proc_interrupter.local.name, "Process", name_proc, "interrupt", {}),
+        (logging.INFO, 15.0, proc_interrupter.local.name, "Process", name_proc, "interrupt", dict(type="Interrupt")),
         (
             logging.DEBUG, 15.0, proc_interrupter.local.name, "Simulator", sim.name, "schedule",
             dict(delay=0.0, fn=proc_proc.throw, args=(Interrupt(),), kwargs={}, counter=5)
