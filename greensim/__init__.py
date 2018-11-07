@@ -108,7 +108,7 @@ class _Event:
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, _Event):
             raise ValueError("Both terms of the comparison must be _Event instances.")
-        return (self.timestamp, self.identifier) < (other.timestamp, other.identifier)
+        return (self._timestamp, self.identifier) < (other._timestamp, other.identifier)
 
     @property
     def timestamp(self) -> Optional[float]:
