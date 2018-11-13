@@ -6,6 +6,8 @@ with open("README.md", "r") as file_long_description:
 
 setup(
     name='greensim',
+    maintainer="Benoit Hamelin",
+    maintainer_email="ben@elementai.com",
     version='2.3.0',
     packages=['greensim'],
     data_files=[('.', ['LICENSE'])],
