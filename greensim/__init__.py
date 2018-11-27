@@ -651,7 +651,7 @@ def tagged(*tags: Tags) -> Callable:
     return hook
 
 
-class Timeout(Exception):
+class Timeout(Interrupt):
     """
     Exception raised on processes when the wait for a :py:class:`Queue`, :py:class:`Signal` or :py:class:`Resource`
     takes too long.
@@ -723,24 +723,28 @@ class Queue(Named):
         proc_balk = None
         if timeout is not None:
             def balk(proc):
+                nonlocal proc_balk
                 try:
                     advance(cast(float, timeout))
                     proc.interrupt(Timeout())
                 except Cancel:
                     pass
+                finally:
+                    proc_balk = None
 
             proc_balk = add(balk, Process.current())
 
         try:
             pause()
-            if proc_balk is not None:
-                proc_balk.interrupt(Cancel())
-        except Timeout:
+        except Interrupt:
             current = Process.current()
             for index in reversed([i for i, (_, proc) in enumerate(self._waiting) if proc is current]):
                 del self._waiting[index]
             heapify(self._waiting)
             raise
+        finally:
+            if proc_balk is not None:
+                proc_balk.interrupt(Cancel())
 
     def pop(self):
         """
