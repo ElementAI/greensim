@@ -223,7 +223,11 @@ class Simulator(Named):
         event should execute, the function corresponding to the event, its positional parameters (as a tuple of
         arbitrary length), and its keyword parameters (as a dictionary).
         """
-        return ((event.timestamp, event.fn, event.args, event.kwargs) for event in self._events)
+        return (
+            (event.timestamp, event.fn, event.args, event.kwargs)
+            for event in self._events
+            if not event.is_cancelled
+        )
 
     def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> int:
         """
