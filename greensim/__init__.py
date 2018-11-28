@@ -712,7 +712,7 @@ class Queue(Named):
             If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
             leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
-        class Cancel(Interrupt):
+        class CancelBalk(Interrupt):
             pass
 
         self._counter += 1
@@ -727,7 +727,7 @@ class Queue(Named):
                 try:
                     advance(cast(float, timeout))
                     proc.interrupt(Timeout())
-                except Cancel:
+                except CancelBalk:
                     pass
                 finally:
                     proc_balk = None
@@ -744,7 +744,7 @@ class Queue(Named):
             raise
         finally:
             if proc_balk is not None:
-                proc_balk.interrupt(Cancel())
+                proc_balk.interrupt(CancelBalk())
 
     def pop(self):
         """
