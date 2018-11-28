@@ -8,7 +8,7 @@ setup(
     name='greensim',
     maintainer="Benoit Hamelin",
     maintainer_email="ben@elementai.com",
-    version='2.3.0',
+    version='2.3.1',
     packages=['greensim'],
     data_files=[('.', ['LICENSE'])],
     install_requires=['greenlet==0.4.14'],
