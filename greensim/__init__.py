@@ -732,6 +732,7 @@ class Queue(Named):
                 finally:
                     proc_balk = None
 
+            # The balking process is started here.
             proc_balk = add(balk, Process.current())
 
         try:
@@ -743,6 +744,19 @@ class Queue(Named):
             heapify(self._waiting)
             raise
         finally:
+            # Three situations can prompt a process to exit a queue:
+            #
+            # 1. The process is pop()ped out of the queue by a peer.
+            # 2. The process balk()s out after a timeout.
+            # 3. The process leaves the queue because of a distinct interrupt (besides CancelBalk).
+            #
+            # In cases 1 and 3, the balking process has never exited and is still in the advance() call. In both these
+            # cases, the balking process should itself be interrupted, otherwise it may prompt the balking of a future
+            # queue traversal. However, if we exit the queue because of case no. 2, the balking process is finished.
+            # Interrupting it would do no harm (it has been tested by accident), but we mean to be deliberate about when
+            # this interruption is necessary. So we perform the interrupt of the balking process only in cases 1 and 3;
+            # in case 2, the balk() function exits, thereby clearing the reference we have here to it. Do remark that
+            # whenever a timeout is not set, proc_balk remains None all the way, reducing the situation to case 1.
             if proc_balk is not None:
                 proc_balk.interrupt(CancelBalk())
 
