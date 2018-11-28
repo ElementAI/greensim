@@ -577,6 +577,34 @@ def test_cancel_timeout():
     assert log == [("a", "finish")]
 
 
+class InterruptCustom(Interrupt):
+    pass
+
+
+def test_timeout_interrupt():
+    queue = Queue()
+    sim = Simulator()
+    log = []
+
+    def queueing():
+        log.append("queued")
+        try:
+            queue.join(timeout=100)
+        except InterruptCustom:
+            log.append("interrupt")
+
+    proc_queueing = sim.add(queueing)
+    sim.run(50)
+    assert(log == ["queued"])
+    assert(len(queue) == 1)
+
+    proc_queueing.interrupt(InterruptCustom())
+    sim.run(10)
+    assert(log == ["queued", "interrupt"])
+    assert(len(queue) == 0)
+    assert(len(list(sim.events())) == 0)
+
+
 def wait_for(signal: Signal, times_expected: List[float], delay_between: float, log: List[float] = []):
     for expected in times_expected:
         advance(delay_between)

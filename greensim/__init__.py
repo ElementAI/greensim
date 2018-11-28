@@ -223,7 +223,11 @@ class Simulator(Named):
         event should execute, the function corresponding to the event, its positional parameters (as a tuple of
         arbitrary length), and its keyword parameters (as a dictionary).
         """
-        return ((event.timestamp, event.fn, event.args, event.kwargs) for event in self._events)
+        return (
+            (event.timestamp, event.fn, event.args, event.kwargs)
+            for event in self._events
+            if not event.is_cancelled
+        )
 
     def _schedule(self, delay: float, event: Callable, *args: Any, **kwargs: Any) -> int:
         """
@@ -647,7 +651,7 @@ def tagged(*tags: Tags) -> Callable:
     return hook
 
 
-class Timeout(Exception):
+class Timeout(Interrupt):
     """
     Exception raised on processes when the wait for a :py:class:`Queue`, :py:class:`Signal` or :py:class:`Resource`
     takes too long.
@@ -708,7 +712,7 @@ class Queue(Named):
             If this parameter is not ``None``, it is taken as a delay at the end of which the process times out, and
             leaves the queue forcibly. In such a situation, a :py:class:`Timeout` exception is raised on the process.
         """
-        class Cancel(Interrupt):
+        class CancelBalk(Interrupt):
             pass
 
         self._counter += 1
@@ -719,24 +723,42 @@ class Queue(Named):
         proc_balk = None
         if timeout is not None:
             def balk(proc):
+                nonlocal proc_balk
                 try:
                     advance(cast(float, timeout))
                     proc.interrupt(Timeout())
-                except Cancel:
+                except CancelBalk:
                     pass
+                finally:
+                    proc_balk = None
 
+            # The balking process is started here.
             proc_balk = add(balk, Process.current())
 
         try:
             pause()
-            if proc_balk is not None:
-                proc_balk.interrupt(Cancel())
-        except Timeout:
+        except Interrupt:
             current = Process.current()
             for index in reversed([i for i, (_, proc) in enumerate(self._waiting) if proc is current]):
                 del self._waiting[index]
             heapify(self._waiting)
             raise
+        finally:
+            # Three situations can prompt a process to exit a queue:
+            #
+            # 1. The process is pop()ped out of the queue by a peer.
+            # 2. The process balk()s out after a timeout.
+            # 3. The process leaves the queue because of a distinct interrupt (besides CancelBalk).
+            #
+            # In cases 1 and 3, the balking process has never exited and is still in the advance() call. In both these
+            # cases, the balking process should itself be interrupted, otherwise it may prompt the balking of a future
+            # queue traversal. However, if we exit the queue because of case no. 2, the balking process is finished.
+            # Interrupting it would do no harm (it has been tested by accident), but we mean to be deliberate about when
+            # this interruption is necessary. So we perform the interrupt of the balking process only in cases 1 and 3;
+            # in case 2, the balk() function exits, thereby clearing the reference we have here to it. Do remark that
+            # whenever a timeout is not set, proc_balk remains None all the way, reducing the situation to case 1.
+            if proc_balk is not None:
+                proc_balk.interrupt(CancelBalk())
 
     def pop(self):
         """
